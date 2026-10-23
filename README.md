@@ -26,15 +26,27 @@ Meeting 1.
 
 ## Project Brief
 
-- **Project title:**
-- **Intended user:**
-- **Problem and primary task:**
-- **Why an agent is appropriate:**
-- **Planned data:**
-- **Planned tools:**
-- **Planned visual input:**
-- **Success criteria:**
-- **Non-goals and safety boundaries:**
+- **Project title:** CVPilotAgent, agent tworzący spersonalizowane CV
+- **Intended user:** osoba szukająca pracy, np. junior analityk lub developer
+- **Problem and primary task:** użytkownik wpisuje swoje umiejętności w pliku
+  JSON. Agent wyszukuje pasujące oferty pracy i wypisuje je posortowane wg
+  dopasowania. Kolejne etapy (w planie): generowanie CV dopasowanego do ofert
+  i wysłanie go po akceptacji użytkownika.
+- **Why an agent is appropriate:** wybór następnego kroku zależy od wyników
+  poprzednich, np. ile ofert znaleziono i których umiejętności brakuje.
+- **Planned data:** `data/profile.json` (profil użytkownika) i
+  `data/job_offers.json` (przykładowe oferty). Dane są fikcyjne. Prawdziwy
+  profil nie trafia do repozytorium.
+- **Planned tools:** `load_profile`, `load_offers`, `search_offers` (tylko
+  odczyt, zrealizowane w tym kroku). Później: generowanie CV i wysyłka (wymaga
+  zgody użytkownika).
+- **Planned visual input:** brak na tym etapie.
+- **Success criteria:** dla przykładowego profilu oferty są uporządkowane
+  według dopasowania umiejętności, a oferty bez wspólnych umiejętności nie
+  pojawiają się na liście. Testy przechodzą bez połączenia z modelem.
+- **Non-goals and safety boundaries:** agent nie wysyła CV ani nie
+  odpowiada na oferty bez zgody użytkownika. Nie scrapuje serwisów z ofertami
+  bez zgody ich regulaminu. Nie zapisuje danych osobowych w śladach.
 
 Replace the empty fields above with your project definition and keep them
 current as the project develops.
