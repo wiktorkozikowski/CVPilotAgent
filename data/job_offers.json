@@ -1,0 +1,38 @@
+[
+  {
+    "id": "offer-001",
+    "title": "Junior Data Analyst",
+    "company": "Przykładowa Firma A",
+    "location": "Warszawa",
+    "required_skills": ["SQL", "Excel", "statistics"],
+    "source": "example-board",
+    "url": "https://example.com/offers/001"
+  },
+  {
+    "id": "offer-002",
+    "title": "Python Developer (junior)",
+    "company": "Przykładowa Firma B",
+    "location": "Kraków",
+    "required_skills": ["Python", "Git", "SQL"],
+    "source": "example-board",
+    "url": "https://example.com/offers/002"
+  },
+  {
+    "id": "offer-003",
+    "title": "Data Engineer",
+    "company": "Przykładowa Firma C",
+    "location": "Warszawa",
+    "required_skills": ["Python", "Spark", "SQL", "Airflow"],
+    "source": "example-board",
+    "url": "https://example.com/offers/003"
+  },
+  {
+    "id": "offer-004",
+    "title": "Analityk biznesowy",
+    "company": "Przykładowa Firma D",
+    "location": "Gdańsk",
+    "required_skills": ["Excel", "PowerPoint", "communication"],
+    "source": "example-board",
+    "url": "https://example.com/offers/004"
+  }
+]
