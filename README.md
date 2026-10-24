@@ -95,6 +95,8 @@ and safety controls are intentionally left for you to design and implement.
 ```bash
 uv run pytest
 uv run ruff check .
+
+uv run python -c "from pathlib import Path; from agent_project.agent import SYSTEM_PROMPT, run_agent; from agent_project.cv_tools import load_offers, load_profile; from agent_project.llm import OpenRouterClient; data = Path('data'); messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': 'Pokaz oferty pasujace do mojego profilu.'}]; print(run_agent(OpenRouterClient(), messages, load_profile(data / 'profile.json'), load_offers(data / 'job_offers.json'), Path('traces/agent_run.jsonl')))"
 ```
 
 Use the assignments published on the course website as the source of truth.
