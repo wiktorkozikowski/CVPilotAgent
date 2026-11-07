@@ -8,6 +8,8 @@ from agent_project.models import Offer, Profile
 from agent_project.shortlist import add_to_shortlist, remove_from_shortlist
 from agent_project.tracing import append_trace
 
+MAX_RUN_COST_USD = 0.10
+
 TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -145,20 +147,37 @@ def run_agent(
     max_steps: int = 12,
     shortlist_path: Path = Path("data/shortlist.json"),
     confirm: Callable[[str], bool] = _deny,
+    max_cost_usd: float = MAX_RUN_COST_USD,
 ) -> str:
+    spent_usd = 0.0
     for step in range(1, max_steps + 1):
         reply = client.complete(messages, TOOLS)
+        spent_usd += reply["usage"].get("cost") or 0.0
         append_trace(
             trace_path,
             "model_decision",
             {
                 "step": step,
+                "provider": reply.get("provider"),
+                "model": reply.get("model"),
                 "text": reply["text"],
                 "tool_calls": reply["tool_calls"],
                 "usage": reply["usage"],
                 "latency_ms": reply["latency_ms"],
+                "run_cost_usd": spent_usd,
             },
         )
+
+        if spent_usd > max_cost_usd:
+            append_trace(
+                trace_path,
+                "cost_limit",
+                {"step": step, "spent_usd": spent_usd, "limit_usd": max_cost_usd},
+            )
+            raise RuntimeError(
+                f"Przekroczono limit kosztu uruchomienia: {spent_usd:.4f} USD "
+                f"z {max_cost_usd:.2f} USD"
+            )
 
         if not reply["tool_calls"]:
             return reply["text"]
