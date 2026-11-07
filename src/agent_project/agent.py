@@ -1,8 +1,11 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent_project.cv_tools import Offer, Profile, search_offers
+from agent_project.matching import search_offers
+from agent_project.models import Offer, Profile
+from agent_project.shortlist import add_to_shortlist, remove_from_shortlist
 from agent_project.tracing import append_trace
 
 TOOLS: list[dict[str, Any]] = [
@@ -26,39 +29,122 @@ TOOLS: list[dict[str, Any]] = [
                 "required": [],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "dodaj_do_listy",
+            "description": (
+                "Dodaje ofertę do listy wybranych ofert. Podaj id oferty z wyników "
+                "szukaj_ofert. Zwraca status: added, already_exists albo not_found."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "offer_id": {
+                        "type": "string",
+                        "description": "Id oferty z wyników szukaj_ofert.",
+                    }
+                },
+                "required": ["offer_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "usun_z_listy",
+            "description": (
+                "Usuwa ofertę z listy wybranych. Działa tylko po potwierdzeniu "
+                "przez użytkownika. Zwraca status: removed, not_found albo "
+                "confirmation_required."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "offer_id": {
+                        "type": "string",
+                        "description": "Id oferty z listy wybranych.",
+                    }
+                },
+                "required": ["offer_id"],
+            },
+        },
+    },
 ]
 
 SYSTEM_PROMPT = (
     "Jesteś asystentem, który pomaga znaleźć pracę. "
     "Twoim celem jest pokazanie użytkownikowi ofert pasujących do jego "
-    "umiejętności.\n"
-    "Używaj narzędzia szukaj_ofert. Nie wymyślaj ofert, firm ani linków. "
-    "Opieraj się tylko na wynikach narzędzia.\n"
+    "umiejętności i, na jego prośbę, dodanie wybranych ofert do listy.\n"
+    "Używaj narzędzia szukaj_ofert. Do listy dodawaj tylko oferty z wyników "
+    "szukaj_ofert, używając ich id. Nie wymyślaj ofert, firm, linków ani id. "
+    "Opieraj się tylko na wynikach narzędzi.\n"
+    "Jeśli dodanie zwróci already_exists albo not_found, nie powtarzaj tego "
+    "samego wywołania. Wybierz inną ofertę albo poinformuj użytkownika.\n"
+    "Usunięcie z listy wymaga zgody użytkownika. Jeśli usun_z_listy zwróci "
+    "confirmation_required, napisz, że oferta nie została usunięta.\n"
     "Gdy wyniki są gotowe, podsumuj je krótko w kilku punktach i zakończ."
 )
 
-def run_tool(call: dict, profile: Profile, offers: list[Offer]) -> str:
-    if call["name"] != "szukaj_ofert":
-        return f"Nieznane narzędzie: {call['name']}"
 
+def _deny(offer_id: str) -> bool:
+    return False
+
+
+def run_tool(
+    call: dict,
+    profile: Profile,
+    offers: list[Offer],
+    shortlist_path: Path,
+    confirm: Callable[[str], bool] = _deny,
+) -> str:
     arguments = json.loads(call["arguments"] or "{}")
-    matches = search_offers(profile, offers, limit=arguments.get("limit", 10))
-    if not matches:
-        return "Brak pasujących ofert."
 
-    lines = []
-    for match in matches:
-        offer = match.offer
-        skills = ", ".join(match.matched_skills)
-        lines.append(
-            f"- {offer.title}, {offer.company}, {offer.location}: "
-            f"pasuje {skills} ({offer.url})"
+    if call["name"] == "szukaj_ofert":
+        try:
+            matches = search_offers(profile, offers, limit=arguments.get("limit", 10))
+        except ValueError as error:
+            return json.dumps(
+                {"status": "error", "message": str(error)}, ensure_ascii=False
+            )
+        return json.dumps(
+            {
+                "status": "ok",
+                "offers": [match.model_dump(mode="json") for match in matches],
+            },
+            ensure_ascii=False,
         )
-    return "\n".join(lines)
+
+    if call["name"] == "dodaj_do_listy":
+        offer_id = arguments.get("offer_id")
+        if not isinstance(offer_id, str) or not offer_id:
+            return "Błąd: offer_id musi być niepustym tekstem."
+        result = add_to_shortlist(offer_id, offers, shortlist_path)
+        return result.model_dump_json()
+
+    if call["name"] == "usun_z_listy":
+        offer_id = arguments.get("offer_id")
+        if not isinstance(offer_id, str) or not offer_id:
+            return "Błąd: offer_id musi być niepustym tekstem."
+        # Confirmation comes from the application (e.g. a user prompt), never from
+        # the model's arguments, so a "confirmed" field from the model is ignored.
+        confirmed = confirm(offer_id)
+        result = remove_from_shortlist(offer_id, shortlist_path, confirmed=confirmed)
+        return result.model_dump_json()
+
+    return f"Nieznane narzędzie: {call['name']}"
+
 
 def run_agent(
-    client, messages, profile, offers, trace_path: Path, max_steps: int = 12
+    client,
+    messages,
+    profile,
+    offers,
+    trace_path: Path,
+    max_steps: int = 12,
+    shortlist_path: Path = Path("data/shortlist.json"),
+    confirm: Callable[[str], bool] = _deny,
 ) -> str:
     for step in range(1, max_steps + 1):
         reply = client.complete(messages, TOOLS)
@@ -95,7 +181,7 @@ def run_agent(
             }
         )
 
-        result = run_tool(call, profile, offers)
+        result = run_tool(call, profile, offers, shortlist_path, confirm)
         append_trace(
             trace_path,
             "tool_result",
@@ -104,5 +190,3 @@ def run_agent(
         messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
 
     raise RuntimeError("Osiągnięto limit kroków")
-
-        

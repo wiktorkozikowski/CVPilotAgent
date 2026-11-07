@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
 from agent_project.agent import SYSTEM_PROMPT, run_agent
-from agent_project.cv_tools import load_offers, load_profile
 from agent_project.llm import MockClient
+from agent_project.models import load_offers, load_profile
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -44,6 +45,7 @@ def test_agent_finds_offers(tmp_path) -> None:
     assert len(trace_path.read_text(encoding="utf-8").splitlines()) == 3
     tool_messages = [m for m in messages if m["role"] == "tool"]
     assert len(tool_messages) == 1
-    lines = tool_messages[0]["content"].splitlines()
-    assert len(lines) == 2
-    assert "Junior Data Analyst" in lines[0]
+    result = json.loads(tool_messages[0]["content"])
+    assert result["status"] == "ok"
+    assert len(result["offers"]) == 2
+    assert result["offers"][0]["offer"]["title"] == "Junior Data Analyst"

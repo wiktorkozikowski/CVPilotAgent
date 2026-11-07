@@ -1,7 +1,8 @@
-"""Read-only tools for the CV agent: load the profile and find matching offers."""
+"""Data models for the CV agent and loaders for the JSON files that hold them."""
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -30,6 +31,13 @@ class OfferMatch(BaseModel):
     score: float
 
 
+class ShortlistResult(BaseModel):
+    status: Literal[
+        "added", "removed", "not_found", "already_exists", "confirmation_required"
+    ]
+    offer_id: str
+
+
 def load_profile(path: Path) -> Profile:
     """Read the user's profile from a JSON file and validate it."""
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -40,22 +48,3 @@ def load_offers(path: Path) -> list[Offer]:
     """Read saved job offers from a JSON file and validate them."""
     data = json.loads(path.read_text(encoding="utf-8"))
     return [Offer.model_validate(item) for item in data]
-
-
-def search_offers(
-    profile: Profile, offers: list[Offer], limit: int = 10
-) -> list[OfferMatch]:
-
-    known = {skill.casefold() for skill in profile.skills}
-    matches = []
-    for offer in offers:
-        required = {skill.casefold(): skill for skill in offer.required_skills}
-        matched = [required[key] for key in required if key in known]
-        if not matched:
-            continue
-        score = len(matched) / len(required)
-        matches.append(OfferMatch(offer=offer, matched_skills=matched, score=score))
-    matches.sort(
-        key=lambda match: (match.score, len(match.matched_skills)), reverse=True
-    )
-    return matches[:limit]
