@@ -1,0 +1,7 @@
+{
+  "name": "Jan Przykładowy",
+  "location": "Warszawa",
+  "target_roles": ["Junior Data Analyst", "Python Developer"],
+  "skills": ["Python", "SQL", "pandas", "Excel", "Git", "statistics"],
+  "languages": ["polski", "angielski"]
+}

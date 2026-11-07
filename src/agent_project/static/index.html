@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CVPilot: profile i dopasowania</title>
+  <style>
+    :root {
+      --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #5b6474;
+      --accent: #2456d6; --accent-text: #ffffff; --border: #d9dde5; --error: #b3261e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #14171d; --card: #1e232c; --text: #e7eaf0; --muted: #9aa3b2;
+        --accent: #6d93ff; --accent-text: #0b1020; --border: #2f3642; --error: #ff8a80;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #14171d; --card: #1e232c; --text: #e7eaf0; --muted: #9aa3b2;
+      --accent: #6d93ff; --accent-text: #0b1020; --border: #2f3642; --error: #ff8a80;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.6rem; margin: 0 0 16px; }
+    h2 { font-size: 1.2rem; margin: 0 0 12px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .tab { flex: 1 1 200px; padding: 12px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text); border-radius: 10px;
+      font: inherit; cursor: pointer; }
+    .tab[aria-selected="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .card { background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; }
+    .hint { color: var(--muted); font-size: 0.9rem; margin: 2px 0 0; }
+    input, select { width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+    button.primary { margin-top: 16px; padding: 10px 18px; font: inherit; font-weight: 600;
+      color: var(--accent-text); background: var(--accent); border: 0; border-radius: 8px;
+      cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    .msg { margin-top: 12px; font-weight: 600; }
+    .ok { color: var(--accent); }
+    .err { color: var(--error); }
+    .answer { white-space: pre-wrap; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border);
+      vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    a { color: var(--accent); }
+    .trace { color: var(--muted); font-size: 0.85rem; margin-top: 12px; word-break: break-all; }
+    @media (max-width: 520px) {
+      table, thead, tbody, tr, th, td { display: block; }
+      thead { display: none; }
+      tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
+      td { border: 0; padding: 2px 0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>CVPilot</h1>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-add" aria-selected="true" aria-controls="panel-add">Dodaj profil</button>
+      <button class="tab" role="tab" id="tab-search" aria-selected="false" aria-controls="panel-search">Szukaj dopasowań</button>
+    </div>
+
+    <section id="panel-add" class="card" role="tabpanel" aria-labelledby="tab-add">
+      <h2>Nowy profil</h2>
+      <form id="profile-form">
+        <label for="f-name">Imię i nazwisko</label>
+        <input id="f-name" name="name" required maxlength="120">
+        <label for="f-location">Miasto</label>
+        <input id="f-location" name="location" required maxlength="120">
+        <label for="f-roles">Szukane stanowiska</label>
+        <input id="f-roles" name="target_roles" placeholder="np. Junior Data Analyst, Python Developer">
+        <p class="hint">Oddziel przecinkami.</p>
+        <label for="f-skills">Umiejętności</label>
+        <input id="f-skills" name="skills" placeholder="np. Python, SQL, pandas">
+        <p class="hint">Oddziel przecinkami. Dopasowanie liczy się po nazwach umiejętności.</p>
+        <label for="f-languages">Języki</label>
+        <input id="f-languages" name="languages" placeholder="np. polski, angielski">
+        <button class="primary" type="submit">Zapisz profil</button>
+        <p id="profile-msg" class="msg" role="status"></p>
+      </form>
+    </section>
+
+    <section id="panel-search" class="card hidden" role="tabpanel" aria-labelledby="tab-search">
+      <h2>Szukaj dopasowań</h2>
+      <label for="profile-select">Profil</label>
+      <select id="profile-select"></select>
+      <p id="no-profiles" class="hint hidden">Brak profili. Najpierw dodaj profil.</p>
+      <button class="primary" id="search-btn" type="button">Szukaj dopasowań</button>
+      <p id="search-msg" class="msg" role="status"></p>
+      <div id="results" class="hidden">
+        <h2>Odpowiedź agenta</h2>
+        <p id="answer" class="answer"></p>
+        <h2>Oferty</h2>
+        <table>
+          <thead><tr><th>Stanowisko</th><th>Firma</th><th>Dopasowane</th><th>Wynik</th></tr></thead>
+          <tbody id="matches"></tbody>
+        </table>
+        <p id="trace" class="trace"></p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const csv = (value) => value.split(",").map((s) => s.trim()).filter(Boolean);
+
+    function selectTab(name) {
+      const add = name === "add";
+      $("tab-add").setAttribute("aria-selected", String(add));
+      $("tab-search").setAttribute("aria-selected", String(!add));
+      $("panel-add").classList.toggle("hidden", !add);
+      $("panel-search").classList.toggle("hidden", add);
+      if (!add) loadProfiles();
+    }
+    $("tab-add").addEventListener("click", () => selectTab("add"));
+    $("tab-search").addEventListener("click", () => selectTab("search"));
+
+    function setMsg(el, text, ok) {
+      el.textContent = text;
+      el.className = "msg " + (ok ? "ok" : "err");
+    }
+
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    $("profile-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const btn = form.querySelector("button");
+      const body = {
+        name: $("f-name").value.trim(),
+        location: $("f-location").value.trim(),
+        target_roles: csv($("f-roles").value),
+        skills: csv($("f-skills").value),
+        languages: csv($("f-languages").value),
+      };
+      btn.disabled = true;
+      try {
+        const res = await postJson("/api/profiles", body);
+        if (res.ok) {
+          setMsg($("profile-msg"), `Zapisano profil: ${res.data.name}.`, true);
+          form.reset();
+        } else {
+          setMsg($("profile-msg"), res.data.error || "Nie udało się zapisać profilu.", false);
+        }
+      } catch (e) {
+        setMsg($("profile-msg"), "Brak połączenia z serwerem.", false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    async function loadProfiles() {
+      const select = $("profile-select");
+      try {
+        const res = await fetch("/api/profiles");
+        const data = await res.json();
+        select.replaceChildren(...data.profiles.map((p) => {
+          const option = document.createElement("option");
+          option.value = p.id;
+          option.textContent = `${p.name} (${p.location})`;
+          return option;
+        }));
+        const empty = data.profiles.length === 0;
+        $("no-profiles").classList.toggle("hidden", !empty);
+        $("search-btn").disabled = empty;
+      } catch (e) {
+        setMsg($("search-msg"), "Nie udało się pobrać profili.", false);
+      }
+    }
+
+    $("search-btn").addEventListener("click", async () => {
+      const btn = $("search-btn");
+      const profileId = $("profile-select").value;
+      if (!profileId) return;
+      btn.disabled = true;
+      $("results").classList.add("hidden");
+      setMsg($("search-msg"), "Agent pracuje, to może chwilę potrwać…", true);
+      try {
+        const res = await postJson("/api/search", { profile_id: profileId });
+        if (!res.ok) {
+          setMsg($("search-msg"), res.data.error || "Wyszukiwanie nie powiodło się.", false);
+          return;
+        }
+        setMsg($("search-msg"), `Wyniki dla: ${res.data.profile.name}`, true);
+        $("answer").textContent = res.data.answer || "(brak odpowiedzi)";
+        const rows = res.data.matches.map((m) => {
+          const tr = document.createElement("tr");
+          const cells = [
+            m.title,
+            m.company,
+            m.matched_skills.join(", "),
+            String(m.score),
+          ];
+          cells.forEach((text, i) => {
+            const td = document.createElement("td");
+            if (i === 0 && m.url) {
+              const a = document.createElement("a");
+              a.href = m.url;
+              a.target = "_blank";
+              a.rel = "noopener noreferrer";
+              a.textContent = text;
+              td.appendChild(a);
+            } else {
+              td.textContent = text;
+            }
+            tr.appendChild(td);
+          });
+          return tr;
+        });
+        $("matches").replaceChildren(...rows);
+        $("trace").textContent = `Ślad uruchomienia: ${res.data.trace}`;
+        $("results").classList.remove("hidden");
+      } catch (e) {
+        setMsg($("search-msg"), "Brak połączenia z serwerem.", false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

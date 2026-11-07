@@ -99,5 +99,20 @@ uv run ruff check .
 uv run python -c "from pathlib import Path; from agent_project.agent import SYSTEM_PROMPT, run_agent; from agent_project.models import load_offers, load_profile; from agent_project.llm import OpenRouterClient; data = Path('data'); messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': 'Pokaz oferty pasujace do mojego profilu.'}]; print(run_agent(OpenRouterClient(), messages, load_profile(data / 'profile.json'), load_offers(data / 'job_offers.json'), Path('traces/agent_run.jsonl')))"
 ```
 
+### Web UI
+
+```bash
+uv run python -m agent_project.web
+```
+
+Then open http://127.0.0.1:8000. The page has two options:
+
+- **Dodaj profil** saves a new profile to `data/profiles/<id>.json`.
+- **Szukaj dopasowań** lets you choose a saved profile, runs the agent with
+  OpenRouter, and shows the answer, the matching offers, and the trace path in
+  `traces/`.
+
+The server listens only on 127.0.0.1. Search needs `OPENROUTER_API_KEY` in `.env`.
+
 Use the assignments published on the course website as the source of truth.
 
