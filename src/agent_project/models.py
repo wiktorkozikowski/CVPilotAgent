@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+Seniority = Literal["junior", "mid", "senior"]
+
 
 class Profile(BaseModel):
     name: str
@@ -13,6 +15,7 @@ class Profile(BaseModel):
     target_roles: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     languages: list[str] = Field(default_factory=list)
+    seniority: list[Seniority] = Field(default_factory=list)
 
 
 class Offer(BaseModel):

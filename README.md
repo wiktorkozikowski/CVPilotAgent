@@ -37,9 +37,16 @@ Meeting 1.
 - **Planned data:** `data/profile.json` (profil użytkownika) i
   `data/job_offers.json` (przykładowe oferty). Dane są fikcyjne. Prawdziwy
   profil nie trafia do repozytorium.
-- **Planned tools:** `load_profile`, `load_offers`, `search_offers` (tylko
-  odczyt, zrealizowane w tym kroku). Później: generowanie CV i wysyłka (wymaga
-  zgody użytkownika).
+- **Tools:** `szukaj_ofert` (tylko odczyt), `dodaj_do_listy` (odwracalny zapis)
+  i `usun_z_listy` (wymaga potwierdzenia użytkownika w aplikacji). Pierwsze dwa
+  są też w serwerze MCP, usuwanie nie. Każde narzędzie waliduje argumenty w kodzie.
+- **Status:** zrealizowane wyszukiwanie, lista wybranych, pętla z limitem kroków
+  (12) i kosztu (0,10 USD na uruchomienie), interfejs w przeglądarce
+  (`agent_project.web`) z przebiegiem agenta pod wynikami. Dane ofert są
+  fikcyjne. Dalej: generowanie CV i wysyłka, dopiero po zgodzie użytkownika.
+- **Evidence:** `evidence/live_*.jsonl` to przebiegi z prawdziwym modelem
+  (`uv run python -m agent_project.demo_runs`), `flow_trace.jsonl` i
+  `confirmation_trace.jsonl` to przebiegi z mockiem.
 - **Planned visual input:** brak na tym etapie.
 - **Success criteria:** dla przykładowego profilu oferty są uporządkowane
   według dopasowania umiejętności, a oferty bez wspólnych umiejętności nie
@@ -99,20 +106,42 @@ uv run ruff check .
 uv run python -c "from pathlib import Path; from agent_project.agent import SYSTEM_PROMPT, run_agent; from agent_project.models import load_offers, load_profile; from agent_project.llm import OpenRouterClient; data = Path('data'); messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': 'Pokaz oferty pasujace do mojego profilu.'}]; print(run_agent(OpenRouterClient(), messages, load_profile(data / 'profile.json'), load_offers(data / 'job_offers.json'), Path('traces/agent_run.jsonl')))"
 ```
 
-### Web UI
+### Agent w przeglądarce (UI)
 
-```bash
-uv run python -m agent_project.web
-```
+1. Przygotuj projekt: `uv sync --locked`, a w `.env` wpisz `MODEL_NAME` i
+   `OPENROUTER_API_KEY`. Klucz jest potrzebny tylko do wyszukiwania. Dodawanie
+   profili i listy działają bez niego.
+2. Uruchom serwer:
 
-Then open http://127.0.0.1:8000. The page has two options:
+   ```bash
+   uv run python -m agent_project.web
+   ```
 
-- **Dodaj profil** saves a new profile to `data/profiles/<id>.json`.
-- **Szukaj dopasowań** lets you choose a saved profile, runs the agent with
-  OpenRouter, and shows the answer, the matching offers, and the trace path in
-  `traces/`.
+3. Otwórz http://127.0.0.1:8000. Serwer słucha tylko lokalnie. Zatrzymanie:
+   Ctrl+C. Po zmianie w kodzie uruchom serwer ponownie. Zmiany w danych
+   (`data/job_offers.json`, `data/options.json`) działają bez restartu.
 
-The server listens only on 127.0.0.1. Search needs `OPENROUTER_API_KEY` in `.env`.
+Interfejs ma trzy zakładki:
+
+- **Dodaj profil.** Wpisz imię, miasto, poziom (junior, mid, senior), stanowiska
+  i umiejętności. Gotowe wartości zaznaczasz z list, a własne wpisujesz w polach
+  „Inne”. Profil zapisuje się w `data/profiles/<id>.json`.
+- **Szukaj dopasowań.** Wybierz profil i kliknij „Szukaj dopasowań”. Agent
+  wywołuje model z OpenRouter, który wybiera narzędzia (`szukaj_ofert`, a w razie
+  potrzeby `dodaj_do_listy`). Strona pokazuje odpowiedź modelu, tabelę ofert z
+  punktacją, przebieg każdego kroku i ścieżkę do śladu w `traces/`. Przycisk
+  „Dodaj do listy” zapisuje ofertę na liście profilu, dla którego szukałeś.
+- **Lista wybranych.** Wybierz profil, żeby zobaczyć jego listę. Usunięcie oferty
+  wymaga potwierdzenia w oknie przeglądarki. Listy są w
+  `data/shortlists/<id>.json`.
+
+Ograniczenia każdego uruchomienia: najwyżej 12 kroków modelu i 0,10 USD
+(`MAX_RUN_COST_USD` w `agent.py`).
+
+Oferty są w `data/job_offers.json`. To 24 fikcyjne oferty. Aby dodać własne,
+dopisz obiekty z polami `id`, `title`, `company`, `location`, `required_skills`,
+`source` i `url`. Stanowiska i umiejętności do formularza bierze się z
+`data/options.json`.
 
 Use the assignments published on the course website as the source of truth.
 

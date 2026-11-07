@@ -51,6 +51,24 @@
     th { color: var(--muted); font-weight: 600; }
     a { color: var(--accent); }
     .trace { color: var(--muted); font-size: 0.85rem; margin-top: 12px; word-break: break-all; }
+    fieldset.choice { border: 0; padding: 0; margin: 12px 0 0; }
+    fieldset.choice legend { font-weight: 600; padding: 0; margin-bottom: 6px; }
+    .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 6px 12px; }
+    .checks label { display: flex; align-items: center; gap: 8px; margin: 0;
+      font-weight: 400; cursor: pointer; }
+    .checks input { width: auto; margin: 0; }
+    ol.steps { padding-left: 20px; }
+    ol.steps li { margin-bottom: 12px; }
+    pre.raw { white-space: pre-wrap; word-break: break-word; font-size: 0.85rem;
+      color: var(--muted); margin: 4px 0 0; }
+    ul.plain { list-style: none; padding: 0; margin: 0; }
+    ul.plain li { display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .small-btn { margin: 0; padding: 4px 10px; font: inherit; color: var(--accent);
+      background: transparent; border: 1px solid var(--accent); border-radius: 6px;
+      cursor: pointer; white-space: nowrap; }
+    .small-btn:disabled { opacity: 0.5; cursor: wait; }
     @media (max-width: 520px) {
       table, thead, tbody, tr, th, td { display: block; }
       thead { display: none; }
@@ -65,6 +83,7 @@
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="tab-add" aria-selected="true" aria-controls="panel-add">Dodaj profil</button>
       <button class="tab" role="tab" id="tab-search" aria-selected="false" aria-controls="panel-search">Szukaj dopasowań</button>
+      <button class="tab" role="tab" id="tab-list" aria-selected="false" aria-controls="panel-list">Lista wybranych</button>
     </div>
 
     <section id="panel-add" class="card" role="tabpanel" aria-labelledby="tab-add">
@@ -74,12 +93,24 @@
         <input id="f-name" name="name" required maxlength="120">
         <label for="f-location">Miasto</label>
         <input id="f-location" name="location" required maxlength="120">
-        <label for="f-roles">Szukane stanowiska</label>
-        <input id="f-roles" name="target_roles" placeholder="np. Junior Data Analyst, Python Developer">
-        <p class="hint">Oddziel przecinkami.</p>
-        <label for="f-skills">Umiejętności</label>
-        <input id="f-skills" name="skills" placeholder="np. Python, SQL, pandas">
-        <p class="hint">Oddziel przecinkami. Dopasowanie liczy się po nazwach umiejętności.</p>
+        <fieldset class="choice">
+          <legend>Poziom (staż)</legend>
+          <div id="seniority-options" class="checks"></div>
+        </fieldset>
+        <fieldset class="choice">
+          <legend>Szukane stanowiska</legend>
+          <div id="roles-options" class="checks"></div>
+          <label for="f-roles-extra">Inne stanowiska</label>
+          <input id="f-roles-extra" placeholder="np. Analityk danych">
+          <p class="hint">Zaznacz gotowe albo dopisz własne, oddzielone przecinkami.</p>
+        </fieldset>
+        <fieldset class="choice">
+          <legend>Umiejętności</legend>
+          <div id="skills-options" class="checks"></div>
+          <label for="f-skills-extra">Inne umiejętności</label>
+          <input id="f-skills-extra" placeholder="np. Tableau">
+          <p class="hint">Dopasowanie liczy się po nazwach umiejętności z ofert.</p>
+        </fieldset>
         <label for="f-languages">Języki</label>
         <input id="f-languages" name="languages" placeholder="np. polski, angielski">
         <button class="primary" type="submit">Zapisz profil</button>
@@ -99,11 +130,22 @@
         <p id="answer" class="answer"></p>
         <h2>Oferty</h2>
         <table>
-          <thead><tr><th>Stanowisko</th><th>Firma</th><th>Dopasowane</th><th>Wynik</th></tr></thead>
+          <thead><tr><th>Stanowisko</th><th>Firma</th><th>Dopasowane</th><th>Wynik</th><th></th></tr></thead>
           <tbody id="matches"></tbody>
         </table>
+        <h2>Przebieg agenta</h2>
+        <ol id="steps" class="steps"></ol>
         <p id="trace" class="trace"></p>
       </div>
+    </section>
+
+    <section id="panel-list" class="card hidden" role="tabpanel" aria-labelledby="tab-list">
+      <h2>Lista wybranych</h2>
+      <label for="list-profile">Profil</label>
+      <select id="list-profile"></select>
+      <p class="hint">Każdy profil ma własną listę. Dodawanie z wyników wyszukiwania zapisuje ofertę na liście profilu, dla którego szukałeś.</p>
+      <ul id="shortlist" class="plain"></ul>
+      <p id="shortlist-msg" class="msg" role="status"></p>
     </section>
   </main>
 
@@ -111,16 +153,74 @@
     const $ = (id) => document.getElementById(id);
     const csv = (value) => value.split(",").map((s) => s.trim()).filter(Boolean);
 
+    // Ready options from the server, shown as checkboxes; typed extras are merged in.
+    function renderOptions(container, name, items) {
+      container.replaceChildren(...items.map((item, i) => {
+        const label = document.createElement("label");
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.name = name;
+        box.value = item;
+        box.id = `${name}-${i}`;
+        label.htmlFor = box.id;
+        label.append(box, document.createTextNode(item));
+        return label;
+      }));
+    }
+
+    function collect(name, extraId) {
+      const checked = [...document.querySelectorAll(`input[name="${name}"]:checked`)]
+        .map((box) => box.value);
+      const all = [...checked, ...csv($(extraId).value)];
+      const seen = new Set();
+      return all.filter((item) => {
+        const key = item.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    async function loadOptions() {
+      try {
+        const res = await fetch("/api/options");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        renderOptions($("roles-options"), "roles", data.roles);
+        renderOptions($("skills-options"), "skills", data.skills);
+        renderOptions($("seniority-options"), "seniority", data.seniority);
+        // Seniority values are lowercase in the data; show them capitalised.
+        document.querySelectorAll('input[name="seniority"]').forEach((box) => {
+          box.parentElement.lastChild.textContent =
+            box.value.charAt(0).toUpperCase() + box.value.slice(1);
+        });
+      } catch (e) {
+        setMsg(
+          $("profile-msg"),
+          `Nie udało się pobrać gotowych wyborów (${e.message}). ` +
+            "Zatrzymaj serwer, uruchom go ponownie i odśwież stronę.",
+          false,
+        );
+      }
+    }
+    loadOptions();
+
+    // Profile whose search results are on screen; "Dodaj do listy" saves to it.
+    let searchedProfileId = "";
+
+    const TAB_PANELS = { add: "panel-add", search: "panel-search", list: "panel-list" };
     function selectTab(name) {
-      const add = name === "add";
-      $("tab-add").setAttribute("aria-selected", String(add));
-      $("tab-search").setAttribute("aria-selected", String(!add));
-      $("panel-add").classList.toggle("hidden", !add);
-      $("panel-search").classList.toggle("hidden", add);
-      if (!add) loadProfiles();
+      for (const [key, panel] of Object.entries(TAB_PANELS)) {
+        const active = key === name;
+        $(`tab-${key}`).setAttribute("aria-selected", String(active));
+        $(panel).classList.toggle("hidden", !active);
+      }
+      if (name !== "add") loadProfiles();
     }
     $("tab-add").addEventListener("click", () => selectTab("add"));
     $("tab-search").addEventListener("click", () => selectTab("search"));
+    $("tab-list").addEventListener("click", () => selectTab("list"));
+    $("list-profile").addEventListener("change", () => loadShortlist());
 
     function setMsg(el, text, ok) {
       el.textContent = text;
@@ -144,8 +244,10 @@
       const body = {
         name: $("f-name").value.trim(),
         location: $("f-location").value.trim(),
-        target_roles: csv($("f-roles").value),
-        skills: csv($("f-skills").value),
+        target_roles: collect("roles", "f-roles-extra"),
+        skills: collect("skills", "f-skills-extra"),
+        seniority: [...document.querySelectorAll('input[name="seniority"]:checked')]
+          .map((box) => box.value),
         languages: csv($("f-languages").value),
       };
       btn.disabled = true;
@@ -175,6 +277,10 @@
           option.textContent = `${p.name} (${p.location})`;
           return option;
         }));
+        $("list-profile").replaceChildren(
+          ...[...select.options].map((option) => option.cloneNode(true)),
+        );
+        loadShortlist();
         const empty = data.profiles.length === 0;
         $("no-profiles").classList.toggle("hidden", !empty);
         $("search-btn").disabled = empty;
@@ -183,10 +289,112 @@
       }
     }
 
+    function renderSteps(steps) {
+      const items = (steps || []).map((step) => {
+        const li = document.createElement("li");
+        const head = document.createElement("strong");
+        if (step.kind === "decyzja") {
+          const names = step.tools.length
+            ? step.tools.map((t) => `${t.name}(${t.arguments})`).join(", ")
+            : "odpowiedź bez narzędzia";
+          head.textContent = `Krok ${step.step}: model wybrał ${names}`;
+          const meta = document.createElement("div");
+          meta.className = "hint";
+          meta.textContent =
+            `provider: ${step.provider || "?"}, koszt kroku: ${step.cost_usd ?? 0} USD, ` +
+            `koszt uruchomienia: ${step.run_cost_usd ?? 0} USD, czas: ${step.latency_ms} ms`;
+          li.append(head, meta);
+          if (step.text) {
+            const text = document.createElement("pre");
+            text.className = "raw";
+            text.textContent = step.text;
+            li.appendChild(text);
+          }
+        } else if (step.kind === "wynik") {
+          head.textContent = `Wynik narzędzia ${step.tool}:`;
+          const raw = document.createElement("pre");
+          raw.className = "raw";
+          raw.textContent = step.result;
+          li.append(head, raw);
+        } else {
+          head.textContent = `Limit kosztu przekroczony: ${step.spent_usd} USD z ${step.limit_usd} USD`;
+          li.appendChild(head);
+        }
+        return li;
+      });
+      $("steps").replaceChildren(...items);
+    }
+
+    async function loadShortlist() {
+      const profileId = $("list-profile").value;
+      if (!profileId) {
+        $("shortlist").replaceChildren();
+        return;
+      }
+      const res = await fetch(`/api/shortlist?profile_id=${encodeURIComponent(profileId)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg($("shortlist-msg"), data.error || "Nie udało się pobrać listy.", false);
+        return;
+      }
+      const items = data.offers.map((offer) => {
+        const li = document.createElement("li");
+        const text = document.createElement("span");
+        text.textContent = `${offer.title} (${offer.company})`;
+        const btn = document.createElement("button");
+        btn.className = "small-btn";
+        btn.type = "button";
+        btn.textContent = "Usuń";
+        btn.addEventListener("click", () => removeFromList(offer, btn));
+        li.append(text, btn);
+        return li;
+      });
+      $("shortlist").replaceChildren(
+        ...(items.length ? items : [Object.assign(document.createElement("li"), {
+          textContent: "Lista jest pusta.",
+        })]),
+      );
+    }
+
+    async function addToList(offerId, btn) {
+      // Saves to the profile whose results are on screen, not to the list tab's choice.
+      btn.disabled = true;
+      const res = await postJson("/api/shortlist/add", {
+        profile_id: searchedProfileId,
+        offer_id: offerId,
+      });
+      const status = res.data.status;
+      const text = {
+        added: "Dodano do listy wybranych tego profilu.",
+        already_exists: "Ta oferta jest już na liście tego profilu.",
+        not_found: "Nie znaleziono oferty.",
+      }[status] || res.data.error || "Nie udało się dodać.";
+      setMsg($("search-msg"), text, status === "added");
+      $("list-profile").value = searchedProfileId;
+      await loadShortlist();
+      btn.disabled = status === "added" || status === "already_exists";
+    }
+
+    async function removeFromList(offer, btn) {
+      // The user confirms in this dialog; only then is confirmed=true sent.
+      if (!window.confirm(`Usunąć ofertę „${offer.title}” z listy wybranych?`)) return;
+      btn.disabled = true;
+      const res = await postJson("/api/shortlist/remove", {
+        profile_id: $("list-profile").value,
+        offer_id: offer.id,
+        confirmed: true,
+      });
+      setMsg($("shortlist-msg"),
+        res.data.status === "removed" ? "Usunięto z listy." : "Nie udało się usunąć.",
+        res.data.status === "removed");
+      await loadShortlist();
+    }
+
     $("search-btn").addEventListener("click", async () => {
       const btn = $("search-btn");
       const profileId = $("profile-select").value;
       if (!profileId) return;
+      searchedProfileId = profileId;
       btn.disabled = true;
       $("results").classList.add("hidden");
       setMsg($("search-msg"), "Agent pracuje, to może chwilę potrwać…", true);
@@ -194,8 +402,17 @@
         const res = await postJson("/api/search", { profile_id: profileId });
         if (!res.ok) {
           setMsg($("search-msg"), res.data.error || "Wyszukiwanie nie powiodło się.", false);
+          if (res.data.steps) {
+            // Even a failed run shows what the agent did before it stopped.
+            $("answer").textContent = "Agent zatrzymał się przed końcem.";
+            $("matches").replaceChildren();
+            renderSteps(res.data.steps);
+            $("trace").textContent = res.data.trace ? `Ślad uruchomienia: ${res.data.trace}` : "";
+            $("results").classList.remove("hidden");
+          }
           return;
         }
+        renderSteps(res.data.steps);
         setMsg($("search-msg"), `Wyniki dla: ${res.data.profile.name}`, true);
         $("answer").textContent = res.data.answer || "(brak odpowiedzi)";
         const rows = res.data.matches.map((m) => {
@@ -220,6 +437,14 @@
             }
             tr.appendChild(td);
           });
+          const actionCell = document.createElement("td");
+          const addBtn = document.createElement("button");
+          addBtn.className = "small-btn";
+          addBtn.type = "button";
+          addBtn.textContent = "Dodaj do listy";
+          addBtn.addEventListener("click", () => addToList(m.id, addBtn));
+          actionCell.appendChild(addBtn);
+          tr.appendChild(actionCell);
           return tr;
         });
         $("matches").replaceChildren(...rows);

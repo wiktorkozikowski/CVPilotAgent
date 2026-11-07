@@ -63,9 +63,7 @@ def test_agent_skips_offer_already_on_shortlist(tmp_path) -> None:
         shortlist_path=shortlist_path,
     )
 
-    tool_results = [
-        json.loads(m["content"]) for m in messages if m["role"] == "tool"
-    ]
+    tool_results = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
     statuses = [result.get("status") for result in tool_results]
     assert statuses == ["ok", "already_exists", "added"]
 
@@ -82,9 +80,7 @@ class RemovalClient:
         del tools
         last = messages[-1]
         if last["role"] != "tool":
-            return reply(
-                "usun_z_listy", {"offer_id": "offer-001", "confirmed": True}
-            )
+            return reply("usun_z_listy", {"offer_id": "offer-001", "confirmed": True})
         result = json.loads(last["content"])
         assert result["status"] == "confirmation_required"
         return reply(

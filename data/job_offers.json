@@ -4,7 +4,11 @@
     "title": "Junior Data Analyst",
     "company": "Przykładowa Firma A",
     "location": "Warszawa",
-    "required_skills": ["SQL", "Excel", "statistics"],
+    "required_skills": [
+      "SQL",
+      "Excel",
+      "statistics"
+    ],
     "source": "example-board",
     "url": "https://example.com/offers/001"
   },
@@ -13,7 +17,11 @@
     "title": "Python Developer (junior)",
     "company": "Przykładowa Firma B",
     "location": "Kraków",
-    "required_skills": ["Python", "Git", "SQL"],
+    "required_skills": [
+      "Python",
+      "Git",
+      "SQL"
+    ],
     "source": "example-board",
     "url": "https://example.com/offers/002"
   },
@@ -22,7 +30,12 @@
     "title": "Data Engineer",
     "company": "Przykładowa Firma C",
     "location": "Warszawa",
-    "required_skills": ["Python", "Spark", "SQL", "Airflow"],
+    "required_skills": [
+      "Python",
+      "Spark",
+      "SQL",
+      "Airflow"
+    ],
     "source": "example-board",
     "url": "https://example.com/offers/003"
   },
@@ -31,8 +44,290 @@
     "title": "Analityk biznesowy",
     "company": "Przykładowa Firma D",
     "location": "Gdańsk",
-    "required_skills": ["Excel", "PowerPoint", "communication"],
+    "required_skills": [
+      "Excel",
+      "PowerPoint",
+      "communication"
+    ],
     "source": "example-board",
     "url": "https://example.com/offers/004"
+  },
+  {
+    "id": "offer-005",
+    "title": "Data Scientist",
+    "company": "Przykładowa Firma E",
+    "location": "Warszawa",
+    "required_skills": [
+      "Python",
+      "statistics",
+      "machine learning",
+      "SQL"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/005"
+  },
+  {
+    "id": "offer-006",
+    "title": "Backend Developer (Python)",
+    "company": "Przykładowa Firma F",
+    "location": "Kraków",
+    "required_skills": [
+      "Python",
+      "Docker",
+      "SQL",
+      "Git"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/006"
+  },
+  {
+    "id": "offer-007",
+    "title": "Frontend Developer",
+    "company": "Przykładowa Firma G",
+    "location": "Wrocław",
+    "required_skills": [
+      "JavaScript",
+      "React",
+      "HTML",
+      "CSS",
+      "Git"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/007"
+  },
+  {
+    "id": "offer-008",
+    "title": "Marketing Specialist",
+    "company": "Przykładowa Firma H",
+    "location": "Poznań",
+    "required_skills": [
+      "SEO",
+      "Google Analytics",
+      "communication",
+      "Excel"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/008"
+  },
+  {
+    "id": "offer-009",
+    "title": "Specjalista HR",
+    "company": "Przykładowa Firma I",
+    "location": "Łódź",
+    "required_skills": [
+      "communication",
+      "Excel",
+      "teamwork"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/009"
+  },
+  {
+    "id": "offer-010",
+    "title": "Accountant",
+    "company": "Przykładowa Firma J",
+    "location": "Gdańsk",
+    "required_skills": [
+      "Excel",
+      "accounting",
+      "statistics"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/010"
+  },
+  {
+    "id": "offer-011",
+    "title": "Product Analyst",
+    "company": "Przykładowa Firma K",
+    "location": "Zdalnie",
+    "required_skills": [
+      "SQL",
+      "Tableau",
+      "statistics",
+      "communication"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/011"
+  },
+  {
+    "id": "offer-012",
+    "title": "QA Tester",
+    "company": "Przykładowa Firma L",
+    "location": "Warszawa",
+    "required_skills": [
+      "testing",
+      "Selenium",
+      "Jira",
+      "communication"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/012"
+  },
+  {
+    "id": "offer-013",
+    "title": "UX Designer",
+    "company": "Przykładowa Firma M",
+    "location": "Zdalnie",
+    "required_skills": [
+      "Figma",
+      "communication",
+      "teamwork"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/013"
+  },
+  {
+    "id": "offer-014",
+    "title": "Customer Support Specialist",
+    "company": "Przykładowa Firma N",
+    "location": "Kraków",
+    "required_skills": [
+      "communication",
+      "English",
+      "teamwork"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/014"
+  },
+  {
+    "id": "offer-015",
+    "title": "Machine Learning Engineer",
+    "company": "Przykładowa Firma O",
+    "location": "Warszawa",
+    "required_skills": [
+      "Python",
+      "machine learning",
+      "Docker",
+      "Git",
+      "Spark"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/015"
+  },
+  {
+    "id": "offer-016",
+    "title": "BI Developer",
+    "company": "Przykładowa Firma P",
+    "location": "Wrocław",
+    "required_skills": [
+      "SQL",
+      "Power BI",
+      "Excel",
+      "statistics"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/016"
+  },
+  {
+    "id": "offer-017",
+    "title": "DevOps Engineer",
+    "company": "Przykładowa Firma Q",
+    "location": "Zdalnie",
+    "required_skills": [
+      "Linux",
+      "Docker",
+      "Kubernetes",
+      "AWS",
+      "Git"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/017"
+  },
+  {
+    "id": "offer-018",
+    "title": "Financial Analyst",
+    "company": "Przykładowa Firma R",
+    "location": "Warszawa",
+    "required_skills": [
+      "Excel",
+      "accounting",
+      "statistics",
+      "PowerPoint"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/018"
+  },
+  {
+    "id": "offer-019",
+    "title": "Scrum Master",
+    "company": "Przykładowa Firma S",
+    "location": "Poznań",
+    "required_skills": [
+      "Scrum",
+      "Jira",
+      "communication",
+      "teamwork"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/019"
+  },
+  {
+    "id": "offer-020",
+    "title": "Sales Representative",
+    "company": "Przykładowa Firma T",
+    "location": "Gdańsk",
+    "required_skills": [
+      "communication",
+      "negotiation",
+      "Salesforce",
+      "English"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/020"
+  },
+  {
+    "id": "offer-021",
+    "title": "Logistics Coordinator",
+    "company": "Przykładowa Firma U",
+    "location": "Łódź",
+    "required_skills": [
+      "Excel",
+      "communication",
+      "English"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/021"
+  },
+  {
+    "id": "offer-022",
+    "title": "Cybersecurity Analyst",
+    "company": "Przykładowa Firma V",
+    "location": "Warszawa",
+    "required_skills": [
+      "Linux",
+      "networking",
+      "Python",
+      "communication"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/022"
+  },
+  {
+    "id": "offer-023",
+    "title": "Junior Python Developer",
+    "company": "Przykładowa Firma W",
+    "location": "Zdalnie",
+    "required_skills": [
+      "Python",
+      "Git",
+      "SQL",
+      "Django"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/023"
+  },
+  {
+    "id": "offer-024",
+    "title": "Data Analyst",
+    "company": "Przykładowa Firma X",
+    "location": "Wrocław",
+    "required_skills": [
+      "SQL",
+      "Python",
+      "pandas",
+      "Tableau"
+    ],
+    "source": "example-board",
+    "url": "https://example.com/offers/024"
   }
 ]

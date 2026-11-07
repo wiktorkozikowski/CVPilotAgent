@@ -94,6 +94,10 @@ def _deny(offer_id: str) -> bool:
     return False
 
 
+def _error(message: str) -> str:
+    return json.dumps({"status": "error", "message": message}, ensure_ascii=False)
+
+
 def run_tool(
     call: dict,
     profile: Profile,
@@ -101,15 +105,21 @@ def run_tool(
     shortlist_path: Path,
     confirm: Callable[[str], bool] = _deny,
 ) -> str:
-    arguments = json.loads(call["arguments"] or "{}")
+    try:
+        arguments = json.loads(call["arguments"] or "{}")
+    except json.JSONDecodeError:
+        return _error("Argumenty narzędzia nie są poprawnym JSON-em.")
+    if not isinstance(arguments, dict):
+        return _error("Argumenty narzędzia muszą być obiektem JSON.")
 
     if call["name"] == "szukaj_ofert":
+        limit = arguments.get("limit", 10)
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            return _error("limit musi być liczbą całkowitą od 1 do 10.")
         try:
-            matches = search_offers(profile, offers, limit=arguments.get("limit", 10))
+            matches = search_offers(profile, offers, limit=limit)
         except ValueError as error:
-            return json.dumps(
-                {"status": "error", "message": str(error)}, ensure_ascii=False
-            )
+            return _error(str(error))
         return json.dumps(
             {
                 "status": "ok",
@@ -121,21 +131,21 @@ def run_tool(
     if call["name"] == "dodaj_do_listy":
         offer_id = arguments.get("offer_id")
         if not isinstance(offer_id, str) or not offer_id:
-            return "Błąd: offer_id musi być niepustym tekstem."
+            return _error("offer_id musi być niepustym tekstem.")
         result = add_to_shortlist(offer_id, offers, shortlist_path)
         return result.model_dump_json()
 
     if call["name"] == "usun_z_listy":
         offer_id = arguments.get("offer_id")
         if not isinstance(offer_id, str) or not offer_id:
-            return "Błąd: offer_id musi być niepustym tekstem."
+            return _error("offer_id musi być niepustym tekstem.")
         # Confirmation comes from the application (e.g. a user prompt), never from
         # the model's arguments, so a "confirmed" field from the model is ignored.
         confirmed = confirm(offer_id)
         result = remove_from_shortlist(offer_id, shortlist_path, confirmed=confirmed)
         return result.model_dump_json()
 
-    return f"Nieznane narzędzie: {call['name']}"
+    return _error(f"Nieznane narzędzie: {call['name']}")
 
 
 def run_agent(
@@ -175,8 +185,8 @@ def run_agent(
                 {"step": step, "spent_usd": spent_usd, "limit_usd": max_cost_usd},
             )
             raise RuntimeError(
-                f"Przekroczono limit kosztu uruchomienia: {spent_usd:.4f} USD "
-                f"z {max_cost_usd:.2f} USD"
+                f"Przekroczono limit kosztu uruchomienia: {spent_usd:.6g} USD "
+                f"z {max_cost_usd:.6g} USD"
             )
 
         if not reply["tool_calls"]:
