@@ -145,3 +145,4 @@ dopisz obiekty z polami `id`, `title`, `company`, `location`, `required_skills`,
 
 Use the assignments published on the course website as the source of truth.
 
+rocket jobs 

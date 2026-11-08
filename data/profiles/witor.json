@@ -1,0 +1,31 @@
+{
+  "name": "witor",
+  "location": "kozikowski",
+  "target_roles": [
+    "Backend Developer",
+    "BI Developer",
+    "Data Engineer",
+    "Machine Learning Engineer",
+    "Product Analyst",
+    "QA Tester"
+  ],
+  "skills": [
+    "AWS",
+    "CSS",
+    "English",
+    "Git",
+    "HTML",
+    "networking",
+    "Power BI",
+    "Python",
+    "Salesforce",
+    "SQL",
+    "teamwork"
+  ],
+  "languages": [
+    "angielski"
+  ],
+  "seniority": [
+    "junior"
+  ]
+}

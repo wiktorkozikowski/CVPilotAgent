@@ -1,0 +1,7 @@
+{
+  "name": "Piotr Przykładowski",
+  "location": "Wrocław",
+  "target_roles": ["DevOps Engineer", "Cybersecurity Analyst"],
+  "skills": ["Linux", "Docker", "Kubernetes", "AWS", "scripting", "networking"],
+  "languages": ["polski", "angielski"]
+}

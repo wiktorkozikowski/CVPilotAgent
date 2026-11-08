@@ -1,0 +1,7 @@
+{
+  "name": "Anna Wzorcowa",
+  "location": "Kraków",
+  "target_roles": ["Frontend Developer", "UX/UI Designer"],
+  "skills": ["JavaScript", "React", "CSS", "Figma", "Git"],
+  "languages": ["polski", "angielski", "niemiecki"]
+}
