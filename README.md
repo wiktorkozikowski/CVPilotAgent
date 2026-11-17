@@ -154,6 +154,11 @@ i fragmentem wymagań. Żeby agent z niego korzystał, w `.env` ustaw
 `OFFERS_SERVER_TOKEN`. Oferty zwrócone przez serwer zapisują się w
 `data/offers_seen.json` (w `.gitignore`), żeby lista wybranych mogła je pokazać.
 
+Model to gotowy, niedouczany `paraphrase-multilingual-MiniLM-L12-v2`. Jak
+dzielimy i wektoryzujemy oferty, jak wektoryzujemy profil i jak liczony jest
+wynik dopasowania, opisuje sekcja „Model i wektoryzacja” w `server/README.md`.
+Bazę ofert i indeks odświeża co godzinę `offer_server.update` (timer systemd).
+
 Bez `OFFERS_SERVER_URL` agent szuka lokalnie w `data/job_offers.json`. To 24 fikcyjne oferty. Aby dodać własne,
 dopisz obiekty z polami `id`, `title`, `company`, `location`, `required_skills`,
 `source` i `url`. Stanowiska i umiejętności do formularza bierze się z

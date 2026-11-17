@@ -1,0 +1,11 @@
+[Unit]
+Description=Update CVPilot offers every hour
+
+[Timer]
+OnCalendar=hourly
+# Run a missed update after the machine was off.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

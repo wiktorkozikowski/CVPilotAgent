@@ -1,0 +1,24 @@
+# Paths for the VPS where the project lives in /home/ubuntu/server/CVpilot.
+# Another machine: change User, Group and every /home/ubuntu/server/CVpilot path.
+[Unit]
+Description=CVPilot offer database update (one run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/server/CVpilot/server
+EnvironmentFile=/etc/cvpilot-offer-server.env
+# --seed is read only while the offer store is empty: the first run fills it
+# from the offers downloaded earlier with fetch_all.py.
+ExecStart=/home/ubuntu/server/CVpilot/server/.venv/bin/python -m offer_server.update --seed /home/ubuntu/server/CVpilot/agent_project/data
+# A run downloads for at most 50 minutes; this is the hard stop.
+TimeoutStartSec=58min
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/server/CVpilot/server
+PrivateTmp=true

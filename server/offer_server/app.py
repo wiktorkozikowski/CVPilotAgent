@@ -11,6 +11,9 @@ Settings come from the environment:
     OFFER_SERVER_TOKEN  required when the host is not local; clients send it as
                         "Authorization: Bearer <token>"
 
+The server reloads the index by itself when offer_server.update writes a new
+one (checked at most every RELOAD_CHECK_SECONDS), so it needs no restart.
+
 Profiles are never written to disk or to the log.
 """
 
@@ -18,6 +21,8 @@ import hmac
 import json
 import os
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -25,7 +30,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from offer_server.embedder import Embedder, FastEmbedder
-from offer_server.index import OfferIndex, load_index
+from offer_server.index import OfferIndex, index_path, load_index
 from offer_server.ranking import MAX_LIMIT, SearchProfile, search
 
 MAX_BODY_BYTES = 64 * 1024
@@ -33,10 +38,70 @@ MAX_QUERY_CHARS = 200
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 MIN_TOKEN_CHARS = 16
 PLACEHOLDER_TOKEN = "change-me"  # the value in deploy/offer-server.env.example
+RELOAD_CHECK_SECONDS = 30
+
+
+class IndexHolder:
+    """The current index; swaps in a newer file from disk when there is one.
+
+    A broken or mismatched new file is logged and the old index keeps serving.
+    """
+
+    def __init__(
+        self, index: OfferIndex, embedder: Embedder, folder: Path | None = None
+    ) -> None:
+        self.index = index
+        self.embedder = embedder
+        self.folder = folder
+        self._stamp = self._file_stamp()
+        self._checked = time.monotonic()
+        self._lock = threading.Lock()
+
+    def _file_stamp(self) -> float | None:
+        if self.folder is None:
+            return None
+        try:
+            return index_path(self.folder).stat().st_mtime
+        except OSError:
+            return None
+
+    def get(self) -> OfferIndex:
+        if self.folder is None:
+            return self.index
+        now = time.monotonic()
+        if now - self._checked < RELOAD_CHECK_SECONDS:
+            return self.index
+        with self._lock:
+            if now - self._checked < RELOAD_CHECK_SECONDS:
+                return self.index
+            self._checked = now
+            stamp = self._file_stamp()
+            if stamp is not None and stamp != self._stamp:
+                self._stamp = stamp
+                self.reload()
+        return self.index
+
+    def reload(self) -> None:
+        try:
+            fresh = load_index(self.folder)
+        except (OSError, ValueError, KeyError) as error:
+            sys.stderr.write(f"Nowego indeksu nie da się wczytać: {error}\n")
+            return
+        if fresh.meta.get("model") != self.embedder.name:
+            sys.stderr.write(
+                f"Nowy indeks ma model {fresh.meta.get('model')}, serwer używa "
+                f"{self.embedder.name}; zostaje stary indeks.\n"
+            )
+            return
+        self.index = fresh
+        sys.stderr.write(
+            f"Wczytano nowy indeks: {len(fresh.offers)} ofert "
+            f"({fresh.meta.get('built_at')}).\n"
+        )
 
 
 def _make_handler(
-    index: OfferIndex, embedder: Embedder, token: str | None
+    holder: IndexHolder, embedder: Embedder, token: str | None
 ) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
@@ -61,6 +126,7 @@ def _make_handler(
             if self.path != "/health":
                 self._send(404, {"status": "error", "message": "Nie znaleziono."})
                 return
+            index = holder.get()
             self._send(
                 200,
                 {
@@ -118,6 +184,7 @@ def _make_handler(
                 message = f"Niepoprawny profil ({where}): {first['msg']}"
                 self._send(400, {"status": "error", "message": message})
                 return
+            index = holder.get()
             try:
                 found = search(index, embedder, profile, limit, query or None)
             except ValueError as error:
@@ -141,7 +208,9 @@ def make_server(
     host: str = "127.0.0.1",
     port: int = 8100,
     token: str | None = None,
+    index_dir: Path | None = None,
 ) -> ThreadingHTTPServer:
+    """`index_dir` turns on reloading the index when the file there changes."""
     if host not in LOCAL_HOSTS and (
         not token or len(token) < MIN_TOKEN_CHARS or token == PLACEHOLDER_TOKEN
     ):
@@ -154,7 +223,8 @@ def make_server(
             f"Indeks zbudowano modelem {index.meta.get('model')}, a serwer używa "
             f"{embedder.name}. Przebuduj indeks albo zmień OFFER_SERVER_MODEL."
         )
-    return ThreadingHTTPServer((host, port), _make_handler(index, embedder, token))
+    holder = IndexHolder(index, embedder, index_dir)
+    return ThreadingHTTPServer((host, port), _make_handler(holder, embedder, token))
 
 
 def main() -> None:
@@ -165,7 +235,7 @@ def main() -> None:
 
     index = load_index(index_dir)
     embedder = FastEmbedder(index.meta.get("model"))
-    server = make_server(index, embedder, host, port, token)
+    server = make_server(index, embedder, host, port, token, index_dir=index_dir)
     print(
         f"Serwer ofert: http://{host}:{port}  ({len(index.offers)} ofert, "
         f"model {embedder.name}). Zatrzymanie: Ctrl+C.",

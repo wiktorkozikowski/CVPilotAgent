@@ -6,8 +6,9 @@ import re
 from collections import Counter
 from datetime import date
 from pathlib import Path
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from offer_server.text import city_key, plain
 
@@ -99,6 +100,24 @@ class RawOffer(BaseModel):
     valid_through: str | None = None
     description: str = ""
 
+    # Older downloaders (fetch_offers.py, fetch_all.py) keep the page's values
+    # as they were: null for a missing title or city, a single string for one
+    # form of employment.
+    @field_validator("title", "company", "location", "description", mode="before")
+    @classmethod
+    def _none_is_empty(cls, value: Any) -> Any:
+        return "" if value is None else value
+
+    @field_validator("remote", mode="before")
+    @classmethod
+    def _none_is_false(cls, value: Any) -> Any:
+        return False if value is None else value
+
+    @field_validator("employment_type", mode="before")
+    @classmethod
+    def _text_is_list(cls, value: Any) -> Any:
+        return [value] if isinstance(value, str) else value
+
 
 class OfferDoc(BaseModel):
     """A cleaned offer with the parts of its description that matter."""
@@ -122,16 +141,52 @@ class OfferDoc(BaseModel):
     description: str
 
 
+def _json_lines(text: str) -> tuple[list, int]:
+    records, broken = [], 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            broken += 1
+    return records, broken
+
+
 def load_raw_offers(paths: list[Path]) -> list[RawOffer]:
-    """Read a JSON list (.json) or one offer per line (.jsonl)."""
-    offers = []
+    """Read offer files: a JSON list, or one offer per line (fetch_all.py).
+
+    The format is recognised from the content, not the extension, so a renamed
+    file still loads. A folder means every *.json and *.jsonl file in it.
+    A broken line (an interrupted download) or a record without id, URL or
+    source is skipped and counted, so one bad offer does not stop the import.
+    A file that holds no offers at all (e.g. options.json) is skipped.
+    """
+    files: list[Path] = []
     for path in paths:
-        text = path.read_text(encoding="utf-8")
-        if path.suffix == ".jsonl":
-            records = [json.loads(line) for line in text.splitlines() if line.strip()]
+        if path.is_dir():
+            files.extend(sorted([*path.glob("*.jsonl"), *path.glob("*.json")]))
         else:
-            records = json.loads(text)
-        offers.extend(RawOffer.model_validate(record) for record in records)
+            files.append(path)
+    offers = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        skipped = 0
+        try:
+            data = json.loads(text)
+            records = data if isinstance(data, list) else [data]
+        except json.JSONDecodeError:
+            records, skipped = _json_lines(text)
+        if records and isinstance(records[0], dict) and "url" not in records[0]:
+            print(f"{path}: to nie są oferty, pomijam.", flush=True)
+            continue
+        for record in records:
+            try:
+                offers.append(RawOffer.model_validate(record))
+            except ValidationError:
+                skipped += 1
+        if skipped:
+            print(f"{path}: pominięto {skipped} uszkodzonych rekordów.", flush=True)
     return offers
 
 
