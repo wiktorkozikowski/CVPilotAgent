@@ -47,7 +47,8 @@ def save_profile(profiles_dir: Path, profile: Profile) -> str:
         counter += 1
     path = profiles_dir / f"{profile_id}.json"
     path.write_text(
-        json.dumps(profile.model_dump(), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(profile.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
+        + "\n",
         encoding="utf-8",
     )
     return profile_id

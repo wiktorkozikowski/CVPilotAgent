@@ -1,0 +1,20 @@
+{
+  "name": "jan kowalski",
+  "location": "poznań",
+  "target_roles": [
+    "Data Analyst"
+  ],
+  "skills": [
+    "SQL",
+    "pandas",
+    "Excel",
+    "Git",
+    "communication"
+  ],
+  "languages": [
+    "Angielski"
+  ],
+  "seniority": [
+    "junior"
+  ]
+}

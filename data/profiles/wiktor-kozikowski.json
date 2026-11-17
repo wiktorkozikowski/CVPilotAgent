@@ -1,0 +1,47 @@
+{
+  "name": "Wiktor Kozikowski",
+  "location": "Poznań",
+  "email": "test@test.pl",
+  "phone": "884845300",
+  "target_roles": [
+    "IA inżynierting",
+    "devops",
+    "python inż"
+  ],
+  "skills": [
+    "python",
+    "sql",
+    "sap ecm",
+    "bash",
+    "systemy praca w zespole",
+    "cloud code"
+  ],
+  "languages": [],
+  "seniority": [
+    "junior"
+  ],
+  "experience": [
+    {
+      "company": "Żabka",
+      "position": "Specjalista systemów IT",
+      "start": "2024",
+      "end": "obecnie",
+      "description": [
+        "Obsługa zgłoszeń",
+        "Naprawa błędów systemowych"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Technikum TME w Szczecinie",
+      "degree": "Technik mechatronik",
+      "end": null
+    },
+    {
+      "institution": "Uniwersytet im. Adama Mickiewicza w Poznaniu",
+      "degree": "Student wydziału matematyki i informatyki",
+      "end": null
+    }
+  ]
+}

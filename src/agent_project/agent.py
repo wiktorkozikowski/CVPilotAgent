@@ -4,11 +4,17 @@ from pathlib import Path
 from typing import Any
 
 from agent_project.matching import search_offers
-from agent_project.models import Offer, Profile
+from agent_project.models import Offer, OfferMatch, Profile
+from agent_project.offers_client import OffersServerError
 from agent_project.shortlist import add_to_shortlist, remove_from_shortlist
 from agent_project.tracing import append_trace
 
 MAX_RUN_COST_USD = 0.10
+# The model sees this much of each offer's requirements; the rest stays for CVs.
+REQUIREMENTS_FOR_MODEL = 400
+
+# Finds offers for a profile: the offer server, or the local matching.
+SearchFn = Callable[[Profile, int], list[OfferMatch]]
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -17,8 +23,10 @@ TOOLS: list[dict[str, Any]] = [
             "name": "szukaj_ofert",
             "description": (
                 "Znajduje oferty pasujące do umiejętności użytkownika i zwraca je "
-                "od najlepiej dopasowanych. Użyj, gdy użytkownik chce zobaczyć "
-                "oferty pracy."
+                "od najlepiej dopasowanych. Pole conflicts wymienia, co w ofercie "
+                "nie zgadza się z preferencjami użytkownika (poziom, tryb pracy, "
+                "forma zatrudnienia, wynagrodzenie). Użyj, gdy użytkownik chce "
+                "zobaczyć oferty pracy."
             ),
             "parameters": {
                 "type": "object",
@@ -86,6 +94,8 @@ SYSTEM_PROMPT = (
     "samego wywołania. Wybierz inną ofertę albo poinformuj użytkownika.\n"
     "Usunięcie z listy wymaga zgody użytkownika. Jeśli usun_z_listy zwróci "
     "confirmation_required, napisz, że oferta nie została usunięta.\n"
+    "Jeśli oferta ma niepuste conflicts, napisz przy niej, co nie pasuje do "
+    "preferencji użytkownika.\n"
     "Gdy wyniki są gotowe, podsumuj je krótko w kilku punktach i zakończ."
 )
 
@@ -98,13 +108,27 @@ def _error(message: str) -> str:
     return json.dumps({"status": "error", "message": message}, ensure_ascii=False)
 
 
+def _match_for_model(match: OfferMatch) -> dict[str, Any]:
+    data = match.model_dump(mode="json", exclude_none=True)
+    requirements = data["offer"].get("requirements")
+    if requirements and len(requirements) > REQUIREMENTS_FOR_MODEL:
+        data["offer"]["requirements"] = requirements[:REQUIREMENTS_FOR_MODEL] + " …"
+    return data
+
+
 def run_tool(
     call: dict,
     profile: Profile,
     offers: list[Offer],
     shortlist_path: Path,
     confirm: Callable[[str], bool] = _deny,
+    search: SearchFn | None = None,
 ) -> str:
+    """Check one model request in Python, then run the matching function.
+
+    With `search` (the offer server), the offers it returns are appended to
+    `offers`, so a later dodaj_do_listy can find them.
+    """
     try:
         arguments = json.loads(call["arguments"] or "{}")
     except json.JSONDecodeError:
@@ -117,14 +141,16 @@ def run_tool(
         if isinstance(limit, bool) or not isinstance(limit, int):
             return _error("limit musi być liczbą całkowitą od 1 do 10.")
         try:
-            matches = search_offers(profile, offers, limit=limit)
-        except ValueError as error:
+            if search is None:
+                matches = search_offers(profile, offers, limit=limit)
+            else:
+                matches = search(profile, limit)
+        except (ValueError, OffersServerError) as error:
             return _error(str(error))
+        known = {offer.id for offer in offers}
+        offers.extend(m.offer for m in matches if m.offer.id not in known)
         return json.dumps(
-            {
-                "status": "ok",
-                "offers": [match.model_dump(mode="json") for match in matches],
-            },
+            {"status": "ok", "offers": [_match_for_model(m) for m in matches]},
             ensure_ascii=False,
         )
 
@@ -158,10 +184,15 @@ def run_agent(
     shortlist_path: Path = Path("data/shortlist.json"),
     confirm: Callable[[str], bool] = _deny,
     max_cost_usd: float = MAX_RUN_COST_USD,
+    tools: list[dict[str, Any]] | None = None,
+    dispatch: Callable[[dict], str] | None = None,
+    search: SearchFn | None = None,
 ) -> str:
+    """Run the model loop. `tools` and `dispatch` let other flows reuse this loop."""
+    active_tools = TOOLS if tools is None else tools
     spent_usd = 0.0
     for step in range(1, max_steps + 1):
-        reply = client.complete(messages, TOOLS)
+        reply = client.complete(messages, active_tools)
         spent_usd += reply["usage"].get("cost") or 0.0
         append_trace(
             trace_path,
@@ -210,7 +241,12 @@ def run_agent(
             }
         )
 
-        result = run_tool(call, profile, offers, shortlist_path, confirm)
+        if dispatch is None:
+            result = run_tool(
+                call, profile, offers, shortlist_path, confirm, search=search
+            )
+        else:
+            result = dispatch(call)
         append_trace(
             trace_path,
             "tool_result",

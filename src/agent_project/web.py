@@ -1,4 +1,4 @@
-"""Local web UI: add a profile, or search offers for a saved profile with the agent.
+"""Local web UI: build a profile in a chat, or search offers for a saved profile.
 
 Run with `uv run python -m agent_project.web` and open http://127.0.0.1:8000.
 Only the standard library is used for the server; the page is one HTML file.
@@ -13,13 +13,24 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from pydantic import ValidationError
-
 from agent_project.agent import SYSTEM_PROMPT, run_agent
 from agent_project.llm import ModelClient, OpenRouterClient
 from agent_project.matching import search_offers
-from agent_project.models import Profile, load_offers
-from agent_project.profiles import list_profiles, load_profile_by_id, save_profile
+from agent_project.models import Offer, load_offers
+from agent_project.offers_client import (
+    OffersServerClient,
+    OffersServerError,
+    load_seen_offers,
+    remember_offers,
+)
+from agent_project.profile_tools import (
+    PROFILE_SYSTEM_PROMPT,
+    finalize_profile,
+    get_draft,
+    remove_item,
+    run_profile_agent,
+)
+from agent_project.profiles import list_profiles, load_profile_by_id
 from agent_project.shortlist import (
     add_to_shortlist,
     load_shortlist,
@@ -30,6 +41,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_BODY_BYTES = 64 * 1024
+MAX_CHAT_CHARS = 2000
 SEARCH_LIMIT = 10
 
 
@@ -38,12 +50,36 @@ class _Config:
         self,
         data_dir: Path,
         client_factory: Callable[[], ModelClient],
+        offers_client: OffersServerClient | None = None,
     ) -> None:
         self.data_dir = data_dir
+        # Set: offers come from the offer server. None: from job_offers.json.
+        self.offers_client = offers_client
+        self.seen_offers_path = data_dir / "offers_seen.json"
         self.profiles_dir = data_dir / "profiles"
+        self.draft_path = data_dir / "profile_draft.json"
         self.client_factory = client_factory
         # One agent run at a time: the model client and trace files are not shared.
         self.search_lock = threading.Lock()
+        # The profile chat: model messages (for the model) and the visible transcript.
+        self.chat_lock = threading.Lock()
+        self.chat_messages: list[dict[str, Any]] = []
+        self.chat_view: list[dict[str, str]] = []
+
+    def reset_chat(self) -> None:
+        self.chat_messages.clear()
+        self.chat_view.clear()
+        self.draft_path.unlink(missing_ok=True)
+
+
+def _known_offers(config: "_Config") -> list[Offer]:
+    """Offers a shortlist may hold: the local ones and those the server returned."""
+    offers = load_offers(config.data_dir / "job_offers.json")
+    local = {offer.id for offer in offers}
+    offers += [
+        o for o in load_seen_offers(config.seen_offers_path) if o.id not in local
+    ]
+    return offers
 
 
 def _shortlist_path(config: "_Config", profile_id: Any) -> Path:
@@ -104,6 +140,8 @@ def _match_to_dict(match) -> dict[str, Any]:
         "location": match.offer.location,
         "url": match.offer.url,
         "matched_skills": match.matched_skills,
+        "requirements": match.offer.requirements,
+        "conflicts": match.conflicts,
         "score": round(match.score, 2),
     }
 
@@ -144,11 +182,10 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 query = parse_qs(urlparse(self.path).query)
                 self._shortlist(query.get("profile_id", [""])[0])
                 return
-            if self.path == "/api/options":
-                options = json.loads(
-                    (config.data_dir / "options.json").read_text(encoding="utf-8")
-                )
-                self._send_json(200, options)
+            if self.path == "/api/chat":
+                with config.chat_lock:
+                    view = list(config.chat_view)
+                self._send_json(200, {"messages": view, **get_draft(config.draft_path)})
                 return
             if self.path == "/api/profiles":
                 profiles = list_profiles(config.profiles_dir)
@@ -171,8 +208,16 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 self._send_json(400, {"error": "Nieprawidłowe dane JSON."})
                 return
 
-            if self.path == "/api/profiles":
-                self._create_profile(data)
+            if self.path == "/api/chat/message":
+                self._chat_message(data)
+            elif self.path == "/api/chat/confirm":
+                self._chat_confirm()
+            elif self.path == "/api/chat/reset":
+                with config.chat_lock:
+                    config.reset_chat()
+                self._send_json(200, {"status": "reset"})
+            elif self.path == "/api/profile/remove":
+                self._profile_remove(data)
             elif self.path == "/api/search":
                 self._search(data)
             elif self.path in ("/api/shortlist/add", "/api/shortlist/remove"):
@@ -180,20 +225,91 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
             else:
                 self._send_json(404, {"error": "Nie znaleziono."})
 
-        def _create_profile(self, data: dict[str, Any]) -> None:
-            try:
-                profile = Profile.model_validate(data)
-            except ValidationError as error:
+        def _profile_remove(self, data: dict[str, Any]) -> None:
+            # The page's ✕ button: removes one item from the draft, no model involved.
+            section = data.get("section")
+            index = data.get("index")
+            with config.chat_lock:
+                result = remove_item(section, index, config.draft_path)
+            if result["status"] == "removed":
+                self._send_json(200, result)
+            elif result["status"] == "not_found":
+                self._send_json(404, {"error": "Nie ma takiej pozycji."})
+            else:
+                self._send_json(400, {"error": result.get("message", "Błąd.")})
+
+        def _chat_message(self, data: dict[str, Any]) -> None:
+            text = data.get("message")
+            if not isinstance(text, str) or not text.strip():
+                self._send_json(400, {"error": "Napisz wiadomość."})
+                return
+            if len(text) > MAX_CHAT_CHARS:
                 self._send_json(
                     400,
-                    {
-                        "error": "Popraw dane profilu.",
-                        "details": error.errors(include_url=False, include_input=False),
-                    },
+                    {"error": f"Wiadomość może mieć najwyżej {MAX_CHAT_CHARS} znaków."},
                 )
                 return
-            profile_id = save_profile(config.profiles_dir, profile)
-            self._send_json(201, {"id": profile_id, **profile.model_dump()})
+            text = text.strip()
+
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
+            trace_path = config.data_dir.parent / "traces" / f"chat_{stamp}.jsonl"
+            with config.chat_lock:
+                if not config.chat_messages:
+                    config.chat_messages.append(
+                        {"role": "system", "content": PROFILE_SYSTEM_PROMPT}
+                    )
+                # Remember the lengths so a failed run leaves no half-finished turn.
+                messages_before = len(config.chat_messages)
+                view_before = len(config.chat_view)
+                config.chat_messages.append({"role": "user", "content": text})
+                config.chat_view.append({"role": "user", "text": text})
+                try:
+                    answer = run_profile_agent(
+                        config.client_factory(),
+                        config.chat_messages,
+                        trace_path,
+                        draft_path=config.draft_path,
+                        profiles_dir=config.profiles_dir,
+                    )
+                except ValueError as error:
+                    del config.chat_messages[messages_before:]
+                    del config.chat_view[view_before:]
+                    self._send_json(500, {"error": str(error)})
+                    return
+                except RuntimeError as error:
+                    del config.chat_messages[messages_before:]
+                    del config.chat_view[view_before:]
+                    self._send_json(502, {"error": str(error)})
+                    return
+                except Exception:
+                    del config.chat_messages[messages_before:]
+                    del config.chat_view[view_before:]
+                    self._send_json(
+                        500, {"error": "Asystent nie zakończył odpowiedzi."}
+                    )
+                    return
+                config.chat_view.append({"role": "assistant", "text": answer or ""})
+                draft = get_draft(config.draft_path)
+
+            self._send_json(200, {"answer": answer or "", **draft})
+
+        def _chat_confirm(self) -> None:
+            # The button click is the user's confirmation; the model cannot press it.
+            with config.chat_lock:
+                result = finalize_profile(
+                    config.draft_path, config.profiles_dir, confirmed=True
+                )
+                if result["status"] == "saved":
+                    config.chat_messages.clear()
+                    config.chat_view.clear()
+            if result["status"] == "saved":
+                self._send_json(200, result)
+            else:
+                missing = ", ".join(result.get("missing_fields", []))
+                self._send_json(
+                    400,
+                    {"error": f"Brakuje jeszcze: {missing}.", **result},
+                )
 
         def _search(self, data: dict[str, Any]) -> None:
             profile_id = data.get("profile_id")
@@ -206,8 +322,23 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 self._send_json(404, {"error": "Nie ma takiego profilu."})
                 return
 
-            offers = load_offers(config.data_dir / "job_offers.json")
-            matches = search_offers(profile, offers, limit=SEARCH_LIMIT)
+            search = None
+            if config.offers_client is None:
+                offers = load_offers(config.data_dir / "job_offers.json")
+                matches = search_offers(profile, offers, limit=SEARCH_LIMIT)
+            else:
+                # One call to the server: the table below and the agent's tool
+                # both use these candidates.
+                try:
+                    matches = config.offers_client.search(profile, SEARCH_LIMIT)
+                except OffersServerError as error:
+                    self._send_json(502, {"error": str(error)})
+                    return
+                remember_offers(config.seen_offers_path, [m.offer for m in matches])
+                offers = _known_offers(config)
+
+                def search(_profile, limit: int, found=matches):
+                    return found[:limit]
 
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
             trace_path = (
@@ -229,6 +360,7 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                         offers,
                         trace_path,
                         shortlist_path=_shortlist_path(config, profile_id),
+                        search=search,
                     )
             except ValueError as error:
                 # Missing key or model name: safe to show, it names the setting.
@@ -265,7 +397,7 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
             except KeyError:
                 self._send_json(404, {"error": "Nie ma takiego profilu."})
                 return
-            offers = load_offers(config.data_dir / "job_offers.json")
+            offers = _known_offers(config)
             ids = load_shortlist(shortlist_path)
             by_id = {offer.id: offer for offer in offers}
             self._send_json(
@@ -294,8 +426,9 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 self._send_json(404, {"error": "Nie ma takiego profilu."})
                 return
             if path == "/api/shortlist/add":
-                offers = load_offers(config.data_dir / "job_offers.json")
-                result = add_to_shortlist(offer_id, offers, shortlist_path)
+                result = add_to_shortlist(
+                    offer_id, _known_offers(config), shortlist_path
+                )
             else:
                 # The browser sends confirmed=true only after the user clicked
                 # "Usuń" and confirmed in the dialog; the model never calls this.
@@ -312,13 +445,17 @@ def make_server(
     port: int = 8000,
     data_dir: Path = DATA_DIR,
     client_factory: Callable[[], ModelClient] = OpenRouterClient,
+    offers_client: OffersServerClient | None = None,
 ) -> ThreadingHTTPServer:
-    config = _Config(data_dir, client_factory)
+    config = _Config(data_dir, client_factory, offers_client)
     return ThreadingHTTPServer((host, port), _make_handler(config))
 
 
 def main() -> None:
-    server = make_server()
+    offers_client = OffersServerClient.from_env()
+    server = make_server(offers_client=offers_client)
+    source = offers_client.url if offers_client else "data/job_offers.json"
+    print(f"Oferty z: {source}")
     print("Otwórz http://127.0.0.1:8000 w przeglądarce. Zatrzymaj: Ctrl+C.")
     try:
         server.serve_forever()

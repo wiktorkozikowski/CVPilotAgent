@@ -1,0 +1,24 @@
+[Unit]
+Description=CVPilot offer server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cvpilot
+Group=cvpilot
+WorkingDirectory=/opt/cvpilot/server
+EnvironmentFile=/etc/cvpilot-offer-server.env
+# The virtual environment made by `uv sync`; no uv needed at run time.
+ExecStart=/opt/cvpilot/server/.venv/bin/python -m offer_server.app
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+# read-only, not true: the venv's Python may live in the user's home (uv).
+ProtectHome=read-only
+ReadWritePaths=/opt/cvpilot/server
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

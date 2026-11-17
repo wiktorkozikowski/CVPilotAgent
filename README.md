@@ -109,23 +109,28 @@ uv run python -c "from pathlib import Path; from agent_project.agent import SYST
 ### Agent w przeglądarce (UI)
 
 1. Przygotuj projekt: `uv sync --locked`, a w `.env` wpisz `MODEL_NAME` i
-   `OPENROUTER_API_KEY`. Klucz jest potrzebny tylko do wyszukiwania. Dodawanie
-   profili i listy działają bez niego.
+   `OPENROUTER_API_KEY`. Klucz jest potrzebny do rozmowy o profilu i do
+   wyszukiwania. Lista wybranych działa bez niego.
 2. Uruchom serwer:
 
    ```bash
    uv run python -m agent_project.web
+   uv sync --locked
    ```
 
 3. Otwórz http://127.0.0.1:8000. Serwer słucha tylko lokalnie. Zatrzymanie:
    Ctrl+C. Po zmianie w kodzie uruchom serwer ponownie. Zmiany w danych
-   (`data/job_offers.json`, `data/options.json`) działają bez restartu.
+   (`data/job_offers.json`) działają bez restartu.
 
 Interfejs ma trzy zakładki:
 
-- **Dodaj profil.** Wpisz imię, miasto, poziom (junior, mid, senior), stanowiska
-  i umiejętności. Gotowe wartości zaznaczasz z list, a własne wpisujesz w polach
-  „Inne”. Profil zapisuje się w `data/profiles/<id>.json`.
+- **Profil w rozmowie.** Opowiadasz o sobie zwykłym tekstem, a model zadaje
+  pytania o brakujące pola (imię, miasto, stanowiska, umiejętności, języki,
+  poziom). Zebrane dane widzisz na bieżąco po prawej stronie rozmowy. Profil
+  zapisuje się dopiero po kliknięciu „Zatwierdź profil”; sam model nie może go
+  zapisać. Roboczy profil leży w `data/profile_draft.json` (w `.gitignore`),
+  a zapisany w `data/profiles/<id>.json`. „Zacznij od nowa” usuwa rozmowę i
+  roboczy profil.
 - **Szukaj dopasowań.** Wybierz profil i kliknij „Szukaj dopasowań”. Agent
   wywołuje model z OpenRouter, który wybiera narzędzia (`szukaj_ofert`, a w razie
   potrzeby `dodaj_do_listy`). Strona pokazuje odpowiedź modelu, tabelę ofert z
@@ -138,7 +143,18 @@ Interfejs ma trzy zakładki:
 Ograniczenia każdego uruchomienia: najwyżej 12 kroków modelu i 0,10 USD
 (`MAX_RUN_COST_USD` w `agent.py`).
 
-Oferty są w `data/job_offers.json`. To 24 fikcyjne oferty. Aby dodać własne,
+### Serwer ofert (prawdziwe oferty, wyszukiwanie wektorowe)
+
+Prawdziwe oferty obsługuje osobny serwer w folderze `server/` (własne
+środowisko uv, instrukcja w `server/README.md`). Agent wysyła mu profil bez
+imienia, e-maila, telefonu i linków. Serwer wektoryzuje go lokalnym modelem
+(fastembed) i zwraca kandydatów z wynikiem, niezgodnościami z preferencjami
+i fragmentem wymagań. Żeby agent z niego korzystał, w `.env` ustaw
+`OFFERS_SERVER_URL` (np. `http://127.0.0.1:8100`) i, jeśli serwer ma token,
+`OFFERS_SERVER_TOKEN`. Oferty zwrócone przez serwer zapisują się w
+`data/offers_seen.json` (w `.gitignore`), żeby lista wybranych mogła je pokazać.
+
+Bez `OFFERS_SERVER_URL` agent szuka lokalnie w `data/job_offers.json`. To 24 fikcyjne oferty. Aby dodać własne,
 dopisz obiekty z polami `id`, `title`, `company`, `location`, `required_skills`,
 `source` i `url`. Stanowiska i umiejętności do formularza bierze się z
 `data/options.json`.

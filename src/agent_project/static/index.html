@@ -22,7 +22,14 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text);
       font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+    /* Page: the tabs and chat sit in the middle of the page; the profile panel
+       fills the space to their left, so it never pushes the chat off centre. */
+    .layout { display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 760px) minmax(0, 1fr);
+      gap: 24px; align-items: start; padding: 24px 16px 48px; }
+    .layout > main { grid-column: 2; min-width: 0; }
+    .layout > .side-panel { grid-column: 1; justify-self: end; width: 100%;
+      max-width: 380px; }
     h1 { font-size: 1.6rem; margin: 0 0 16px; }
     h2 { font-size: 1.2rem; margin: 0 0 12px; }
     .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -69,6 +76,49 @@
       background: transparent; border: 1px solid var(--accent); border-radius: 6px;
       cursor: pointer; white-space: nowrap; }
     .small-btn:disabled { opacity: 0.5; cursor: wait; }
+    .chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 420px;
+      overflow-y: auto; border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px; margin-bottom: 12px; background: var(--bg); }
+    .bubble { max-width: 85%; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap;
+      word-break: break-word; }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: var(--accent-text); }
+    .bubble.assistant { align-self: flex-start; background: var(--card);
+      border: 1px solid var(--border); }
+    .chat-form { display: flex; gap: 8px; align-items: flex-end; }
+    .chat-form textarea { flex: 1; font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; resize: vertical; }
+    .chat-form button { margin-top: 0; }
+    .side-panel { position: sticky; top: 24px; max-height: calc(100vh - 48px);
+      overflow-y: auto; margin-bottom: 0; }
+    .side-panel h2 { margin-bottom: 8px; }
+    .psec { margin-top: 16px; }
+    .psec h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--muted); margin: 0 0 6px; }
+    .count { font-weight: 400; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow-y: auto; }
+    .chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px;
+      border: 1px solid var(--border); border-radius: 999px; background: var(--bg);
+      font-size: 0.9rem; }
+    .x-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer;
+      font: inherit; font-size: 1.05rem; line-height: 1; padding: 2px 6px; }
+    .x-btn:disabled { opacity: 0.4; cursor: wait; }
+    .empty { color: var(--muted); font-size: 0.9rem; }
+    .entry { position: relative; border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 36px 8px 10px; margin-top: 8px; }
+    .entry .x-btn { position: absolute; top: 4px; right: 4px; }
+    .entry ul { margin: 4px 0 0; padding-left: 18px; font-size: 0.9rem; }
+    .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 8px; margin: 0; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; word-break: break-word; }
+    .draft-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    .draft-actions .primary { margin-top: 0; }
+    /* Too narrow for two columns: the chat first, the profile panel under it. */
+    @media (max-width: 1400px) {
+      .layout { grid-template-columns: minmax(0, 760px); justify-content: center; }
+      .layout > main, .layout > .side-panel { grid-column: 1; }
+      .layout > .side-panel { position: static; max-height: none; max-width: none;
+        order: 2; }
+    }
     @media (max-width: 520px) {
       table, thead, tbody, tr, th, td { display: block; }
       thead { display: none; }
@@ -78,44 +128,35 @@
   </style>
 </head>
 <body>
+  <div id="layout" class="layout">
+  <aside id="profile-panel" class="card side-panel" aria-label="Twój profil">
+    <h2>Twój profil</h2>
+    <dl id="profile-contact" class="kv"></dl>
+    <div id="profile-sections"></div>
+    <p id="draft-missing" class="hint"></p>
+  </aside>
+
   <main>
     <h1>CVPilot</h1>
     <div class="tabs" role="tablist">
-      <button class="tab" role="tab" id="tab-add" aria-selected="true" aria-controls="panel-add">Dodaj profil</button>
+      <button class="tab" role="tab" id="tab-add" aria-selected="true" aria-controls="panel-add">Profil w rozmowie</button>
       <button class="tab" role="tab" id="tab-search" aria-selected="false" aria-controls="panel-search">Szukaj dopasowań</button>
       <button class="tab" role="tab" id="tab-list" aria-selected="false" aria-controls="panel-list">Lista wybranych</button>
     </div>
 
     <section id="panel-add" class="card" role="tabpanel" aria-labelledby="tab-add">
-      <h2>Nowy profil</h2>
-      <form id="profile-form">
-        <label for="f-name">Imię i nazwisko</label>
-        <input id="f-name" name="name" required maxlength="120">
-        <label for="f-location">Miasto</label>
-        <input id="f-location" name="location" required maxlength="120">
-        <fieldset class="choice">
-          <legend>Poziom (staż)</legend>
-          <div id="seniority-options" class="checks"></div>
-        </fieldset>
-        <fieldset class="choice">
-          <legend>Szukane stanowiska</legend>
-          <div id="roles-options" class="checks"></div>
-          <label for="f-roles-extra">Inne stanowiska</label>
-          <input id="f-roles-extra" placeholder="np. Analityk danych">
-          <p class="hint">Zaznacz gotowe albo dopisz własne, oddzielone przecinkami.</p>
-        </fieldset>
-        <fieldset class="choice">
-          <legend>Umiejętności</legend>
-          <div id="skills-options" class="checks"></div>
-          <label for="f-skills-extra">Inne umiejętności</label>
-          <input id="f-skills-extra" placeholder="np. Tableau">
-          <p class="hint">Dopasowanie liczy się po nazwach umiejętności z ofert.</p>
-        </fieldset>
-        <label for="f-languages">Języki</label>
-        <input id="f-languages" name="languages" placeholder="np. polski, angielski">
-        <button class="primary" type="submit">Zapisz profil</button>
-        <p id="profile-msg" class="msg" role="status"></p>
+      <h2>Stwórz profil w rozmowie</h2>
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <form id="chat-form" class="chat-form">
+        <textarea id="chat-input" rows="2" maxlength="2000" required
+          placeholder="Napisz, np. Nazywam się Anna Nowak, mieszkam w Krakowie…"></textarea>
+        <button class="primary" id="chat-send" type="submit">Wyślij</button>
       </form>
+      <div class="draft-actions">
+        <button class="primary" id="chat-confirm" type="button" disabled>Zatwierdź profil</button>
+        <button class="small-btn" id="chat-reset" type="button">Zacznij od nowa</button>
+      </div>
+      <p id="chat-msg" class="msg" role="status"></p>
     </section>
 
     <section id="panel-search" class="card hidden" role="tabpanel" aria-labelledby="tab-search">
@@ -130,7 +171,7 @@
         <p id="answer" class="answer"></p>
         <h2>Oferty</h2>
         <table>
-          <thead><tr><th>Stanowisko</th><th>Firma</th><th>Dopasowane</th><th>Wynik</th><th></th></tr></thead>
+          <thead><tr><th>Stanowisko</th><th>Firma</th><th>Dopasowane</th><th>Niezgodne z preferencjami</th><th>Wynik</th><th></th></tr></thead>
           <tbody id="matches"></tbody>
         </table>
         <h2>Przebieg agenta</h2>
@@ -148,62 +189,21 @@
       <p id="shortlist-msg" class="msg" role="status"></p>
     </section>
   </main>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const csv = (value) => value.split(",").map((s) => s.trim()).filter(Boolean);
-
-    // Ready options from the server, shown as checkboxes; typed extras are merged in.
-    function renderOptions(container, name, items) {
-      container.replaceChildren(...items.map((item, i) => {
-        const label = document.createElement("label");
-        const box = document.createElement("input");
-        box.type = "checkbox";
-        box.name = name;
-        box.value = item;
-        box.id = `${name}-${i}`;
-        label.htmlFor = box.id;
-        label.append(box, document.createTextNode(item));
-        return label;
-      }));
-    }
-
-    function collect(name, extraId) {
-      const checked = [...document.querySelectorAll(`input[name="${name}"]:checked`)]
-        .map((box) => box.value);
-      const all = [...checked, ...csv($(extraId).value)];
-      const seen = new Set();
-      return all.filter((item) => {
-        const key = item.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    }
-
-    async function loadOptions() {
-      try {
-        const res = await fetch("/api/options");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        renderOptions($("roles-options"), "roles", data.roles);
-        renderOptions($("skills-options"), "skills", data.skills);
-        renderOptions($("seniority-options"), "seniority", data.seniority);
-        // Seniority values are lowercase in the data; show them capitalised.
-        document.querySelectorAll('input[name="seniority"]').forEach((box) => {
-          box.parentElement.lastChild.textContent =
-            box.value.charAt(0).toUpperCase() + box.value.slice(1);
-        });
-      } catch (e) {
-        setMsg(
-          $("profile-msg"),
-          `Nie udało się pobrać gotowych wyborów (${e.message}). ` +
-            "Zatrzymaj serwer, uruchom go ponownie i odśwież stronę.",
-          false,
-        );
-      }
-    }
-    loadOptions();
+    const GREETING =
+      "Cześć! Opowiedz o sobie: jak się nazywasz, skąd jesteś i jakiej pracy szukasz. " +
+      "Zapytam o to, czego jeszcze brakuje.";
+    const FIELD_LABELS = {
+      name: "Imię i nazwisko",
+      location: "Miasto",
+      target_roles: "Stanowiska",
+      skills: "Umiejętności",
+      languages: "Języki",
+      seniority: "Poziom",
+    };
 
     // Profile whose search results are on screen; "Dodaj do listy" saves to it.
     let searchedProfileId = "";
@@ -215,6 +215,9 @@
         $(`tab-${key}`).setAttribute("aria-selected", String(active));
         $(panel).classList.toggle("hidden", !active);
       }
+      // The profile panel belongs to the chat; other tabs use the centred column alone.
+      $("profile-panel").classList.toggle("hidden", name !== "add");
+      $("layout").classList.toggle("no-side", name !== "add");
       if (name !== "add") loadProfiles();
     }
     $("tab-add").addEventListener("click", () => selectTab("add"));
@@ -237,33 +240,321 @@
       return { ok: res.ok, status: res.status, data };
     }
 
-    $("profile-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const form = event.target;
-      const btn = form.querySelector("button");
-      const body = {
-        name: $("f-name").value.trim(),
-        location: $("f-location").value.trim(),
-        target_roles: collect("roles", "f-roles-extra"),
-        skills: collect("skills", "f-skills-extra"),
-        seniority: [...document.querySelectorAll('input[name="seniority"]:checked')]
-          .map((box) => box.value),
-        languages: csv($("f-languages").value),
-      };
-      btn.disabled = true;
+    function addBubble(role, text) {
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${role}`;
+      bubble.textContent = text;
+      $("chat-log").appendChild(bubble);
+      $("chat-log").scrollTop = $("chat-log").scrollHeight;
+      return bubble;
+    }
+
+    // The profile panel on the left is drawn from the draft the server keeps.
+    let lastDraft = {};
+    let lastMissing = [];
+
+    function kvRow(list, label, value) {
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.textContent = value || "—";
+      list.append(dt, dd);
+    }
+
+    // Optional fields get a row only once they have a value.
+    function optRow(list, label, value) {
+      if (value) kvRow(list, label, value);
+    }
+
+    const VALUE_LABELS = {
+      onsite: "stacjonarnie", hybrid: "hybrydowo", remote: "zdalnie",
+      FULL_TIME: "pełny etat", PART_TIME: "część etatu",
+      CONTRACTOR: "B2B / kontrakt", INTERN: "staż",
+      HOUR: "godz.", DAY: "dzień", MONTH: "mies.", YEAR: "rok",
+      native: "ojczysty", intern: "staż",
+    };
+    const labels = (values) =>
+      (values || []).map((value) => VALUE_LABELS[value] || value).join(", ");
+
+    // A language is {name, level}; profiles saved earlier hold only the name.
+    function chipText(item) {
+      if (typeof item === "string") return item;
+      const level = VALUE_LABELS[item.level] || item.level;
+      return level ? `${item.name} (${level})` : item.name;
+    }
+
+    function sectionBox(title, count) {
+      const wrap = document.createElement("div");
+      wrap.className = "psec";
+      const heading = document.createElement("h3");
+      heading.textContent = `${title} `;
+      const counter = document.createElement("span");
+      counter.className = "count";
+      counter.textContent = `(${count})`;
+      heading.appendChild(counter);
+      wrap.appendChild(heading);
+      return wrap;
+    }
+
+    function removeButton(section, index) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "x-btn";
+      btn.textContent = "×";
+      btn.title = "Usuń";
+      btn.setAttribute("aria-label", "Usuń");
+      btn.disabled = chatBusy;
+      btn.addEventListener("click", () => removeItem(section, index));
+      return btn;
+    }
+
+    async function removeItem(section, index) {
+      if (chatBusy) return;
+      const res = await postJson("/api/profile/remove", { section, index });
+      if (res.ok) {
+        renderProfile(res.data.draft, res.data.missing_fields);
+      } else {
+        setMsg($("chat-msg"), res.data.error || "Nie udało się usunąć.", false);
+      }
+    }
+
+    function renderProfile(draft, missing) {
+      lastDraft = draft;
+      lastMissing = missing;
+
+      const contact = $("profile-contact");
+      contact.replaceChildren();
+      kvRow(contact, "Imię i nazwisko", draft.name);
+      kvRow(contact, "Miasto", draft.location);
+      kvRow(contact, "E-mail", draft.email);
+      kvRow(contact, "Telefon", draft.phone);
+      optRow(contact, "LinkedIn", draft.linkedin);
+      optRow(contact, "GitHub", draft.github);
+      optRow(contact, "Strona", draft.website);
+      kvRow(contact, "Poziom", labels(draft.seniority));
+      optRow(contact, "Tryb pracy", labels(draft.work_modes));
+      optRow(contact, "Forma", labels(draft.employment_types));
+      const pay = draft.salary_expectation;
+      if (pay) {
+        const unit = VALUE_LABELS[pay.unit] || pay.unit;
+        kvRow(contact, "Wynagrodzenie", `od ${pay.min} ${pay.currency} / ${unit}`);
+      }
+      optRow(contact, "Prawo jazdy", (draft.driving_licenses || []).join(", "));
+      optRow(contact, "O mnie", draft.summary);
+
+      const sections = [];
+      for (const [key, title] of [
+        ["target_roles", "Stanowiska"],
+        ["skills", "Umiejętności"],
+        ["languages", "Języki"],
+      ]) {
+        const items = draft[key] || [];
+        const box = sectionBox(title, items.length);
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        items.forEach((item, index) => {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.append(document.createTextNode(chipText(item)), removeButton(key, index));
+          chips.appendChild(chip);
+        });
+        if (!items.length) {
+          const none = document.createElement("span");
+          none.className = "empty";
+          none.textContent = "jeszcze nic";
+          chips.appendChild(none);
+        }
+        box.appendChild(chips);
+        sections.push(box);
+      }
+
+      const jobs = draft.experience || [];
+      const jobBox = sectionBox("Doświadczenie", jobs.length);
+      jobs.forEach((job, index) => {
+        const card = document.createElement("div");
+        card.className = "entry";
+        const title = document.createElement("strong");
+        title.textContent = `${job.position} · ${job.company}`;
+        const dates = document.createElement("div");
+        dates.className = "hint";
+        dates.textContent = `${job.start} – ${job.end || "obecnie"}`;
+        card.append(removeButton("experience", index), title, dates);
+        if (job.description && job.description.length) {
+          const list = document.createElement("ul");
+          for (const line of job.description) {
+            const li = document.createElement("li");
+            li.textContent = line;
+            list.appendChild(li);
+          }
+          card.appendChild(list);
+        }
+        jobBox.appendChild(card);
+      });
+      sections.push(jobBox);
+
+      const schools = draft.education || [];
+      const schoolBox = sectionBox("Wykształcenie", schools.length);
+      schools.forEach((school, index) => {
+        const card = document.createElement("div");
+        card.className = "entry";
+        const title = document.createElement("strong");
+        title.textContent = `${school.degree} · ${school.institution}`;
+        const year = document.createElement("div");
+        year.className = "hint";
+        year.textContent = school.start
+          ? `${school.start} – ${school.end || "obecnie"}`
+          : school.end ? `do ${school.end}` : "";
+        card.append(removeButton("education", index), title, year);
+        schoolBox.appendChild(card);
+      });
+      sections.push(schoolBox);
+
+      const projects = draft.projects || [];
+      const projectBox = sectionBox("Projekty", projects.length);
+      projects.forEach((project, index) => {
+        const card = document.createElement("div");
+        card.className = "entry";
+        const title = document.createElement("strong");
+        title.textContent = project.name;
+        const meta = document.createElement("div");
+        meta.className = "hint";
+        meta.textContent = [(project.technologies || []).join(", "), project.url]
+          .filter(Boolean)
+          .join(" · ");
+        card.append(removeButton("projects", index), title, meta);
+        if (project.description && project.description.length) {
+          const list = document.createElement("ul");
+          for (const line of project.description) {
+            const li = document.createElement("li");
+            li.textContent = line;
+            list.appendChild(li);
+          }
+          card.appendChild(list);
+        }
+        projectBox.appendChild(card);
+      });
+      sections.push(projectBox);
+
+      const certificates = draft.certificates || [];
+      const certificateBox = sectionBox("Certyfikaty i uprawnienia", certificates.length);
+      certificates.forEach((certificate, index) => {
+        const card = document.createElement("div");
+        card.className = "entry";
+        const title = document.createElement("strong");
+        title.textContent = certificate.name;
+        const meta = document.createElement("div");
+        meta.className = "hint";
+        meta.textContent = [certificate.issuer, certificate.year]
+          .filter(Boolean)
+          .join(" · ");
+        card.append(removeButton("certificates", index), title, meta);
+        certificateBox.appendChild(card);
+      });
+      sections.push(certificateBox);
+      $("profile-sections").replaceChildren(...sections);
+
+      const missingLabels = missing.map((key) => FIELD_LABELS[key] || key);
+      $("draft-missing").textContent = missingLabels.length
+        ? `Brakuje: ${missingLabels.join(", ")}.`
+        : "Wszystko zebrane. Sprawdź dane i zatwierdź profil.";
+      canConfirm = missingLabels.length === 0;
+      refreshControls();
+    }
+
+    // Button states: the chat is busy while a request runs; "Zatwierdź" needs a full draft.
+    let chatBusy = false;
+    let canConfirm = false;
+    function refreshControls() {
+      $("chat-send").disabled = chatBusy;
+      $("chat-input").disabled = chatBusy;
+      $("chat-reset").disabled = chatBusy;
+      $("chat-confirm").disabled = chatBusy || !canConfirm;
+    }
+    function setChatBusy(busy) {
+      chatBusy = busy;
+      if (busy) setMsg($("chat-msg"), "Asystent pisze…", true);
+      // Redraw the panel so the × buttons follow the busy state too.
+      renderProfile(lastDraft, lastMissing);
+    }
+
+    async function loadChat() {
       try {
-        const res = await postJson("/api/profiles", body);
+        const res = await fetch("/api/chat");
+        const data = await res.json();
+        $("chat-log").replaceChildren();
+        addBubble("assistant", GREETING);
+        for (const m of data.messages) addBubble(m.role, m.text);
+        renderProfile(data.draft, data.missing_fields);
+      } catch (e) {
+        setMsg($("chat-msg"), "Nie udało się wczytać rozmowy.", false);
+      }
+    }
+    loadChat();
+
+    async function sendChatMessage() {
+      const input = $("chat-input");
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      const bubble = addBubble("user", text);
+      setChatBusy(true);
+      try {
+        const res = await postJson("/api/chat/message", { message: text });
         if (res.ok) {
-          setMsg($("profile-msg"), `Zapisano profil: ${res.data.name}.`, true);
-          form.reset();
+          addBubble("assistant", res.data.answer || "(brak odpowiedzi)");
+          renderProfile(res.data.draft, res.data.missing_fields);
+          setMsg($("chat-msg"), "", true);
         } else {
-          setMsg($("profile-msg"), res.data.error || "Nie udało się zapisać profilu.", false);
+          // The server dropped this turn too, so the message is not in the transcript.
+          bubble.remove();
+          input.value = text;
+          setMsg($("chat-msg"), res.data.error || "Nie udało się wysłać wiadomości.", false);
         }
       } catch (e) {
-        setMsg($("profile-msg"), "Brak połączenia z serwerem.", false);
+        bubble.remove();
+        input.value = text;
+        setMsg($("chat-msg"), "Brak połączenia z serwerem.", false);
       } finally {
-        btn.disabled = false;
+        setChatBusy(false);
+        input.focus();
       }
+    }
+
+    $("chat-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      sendChatMessage();
+    });
+    // Enter sends the message; Shift+Enter starts a new line.
+    $("chat-input").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        $("chat-form").requestSubmit();
+      }
+    });
+
+    // The button click is the user's confirmation; the model cannot press it.
+    $("chat-confirm").addEventListener("click", async () => {
+      setChatBusy(true);
+      try {
+        const res = await postJson("/api/chat/confirm", {});
+        if (res.ok) {
+          setMsg($("chat-msg"), `Zapisano profil: ${res.data.profile_id}.`, true);
+          await loadChat();
+        } else {
+          setMsg($("chat-msg"), res.data.error || "Nie udało się zapisać profilu.", false);
+        }
+      } catch (e) {
+        setMsg($("chat-msg"), "Brak połączenia z serwerem.", false);
+      } finally {
+        setChatBusy(false);
+      }
+    });
+
+    $("chat-reset").addEventListener("click", async () => {
+      if (!window.confirm("Usunąć rozmowę i zebrane dane?")) return;
+      await postJson("/api/chat/reset", {});
+      setMsg($("chat-msg"), "", true);
+      await loadChat();
     });
 
     async function loadProfiles() {
@@ -421,6 +712,7 @@
             m.title,
             m.company,
             m.matched_skills.join(", "),
+            (m.conflicts || []).join("; ") || "—",
             String(m.score),
           ];
           cells.forEach((text, i) => {

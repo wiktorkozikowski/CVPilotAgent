@@ -31,4 +31,34 @@ flowchart LR
 - Potwierdzenia usunięcia: argument `confirmed` podany przez model jest ignorowany. Potwierdzenie pochodzi tylko z callbacku aplikacji (`confirm`).
 - Ścieżek do plików i danych: model podaje tylko `limit` i `offer_id`.
 - Wag dopasowania: są stałe w `matching.py`.
-- Zewnętrzny klient MCP dostaje tylko `szukaj_ofert` i `dodaj_do_listy`, bez usuwania.
+- Zewnętrzny klient MCP dostaje tylko `szukaj_ofert`, `dodaj_do_listy`, `pobierz_profil` i `zapisz_pola_profilu`, bez usuwania i bez zatwierdzania profilu.
+
+## Budowanie profilu w rozmowie
+
+```mermaid
+flowchart LR
+    subgraph MODEL2["Model (LLM)"]
+        P1["Prośba: zapisz_pola_profilu(name, location, ...)"]
+        P2["Prośba: pobierz_profil()"]
+        P3["Prośba: zatwierdz_profil()"]
+        P4["Pytanie do użytkownika albo podsumowanie"]
+    end
+
+    subgraph APP2["Aplikacja w Pythonie (kontrola)"]
+        Q1["Walidacja pól: ProfileDraft (typy, długości, nieznane pola)"]
+        Q2["Brak zapisu, jeśli którekolwiek pole jest błędne"]
+        Q3["Lista brakujących pól z kodu, nie z tekstu modelu"]
+        Q4["Zapis tylko przy kompletnym profilu"]
+        Q5["Potwierdzenie użytkownika (callback confirm)"]
+        DR[("profile_draft.json\n(robocze, zapis)")]
+        PR[("profiles/<id>.json\n(zapis końcowy)")]
+    end
+
+    P1 --> Q1 --> Q2 --> DR
+    P2 --> Q3
+    P3 --> Q4 --> Q5 --> PR
+    DR -- "validation_error / ok + missing_fields" --> P4
+    PR -- "saved / incomplete / confirmation_required" --> P4
+```
+
+- Model nie zatwierdza profilu argumentami. Zapis wymaga `confirm()` z aplikacji, a argument `confirmed` od modelu jest ignorowany.

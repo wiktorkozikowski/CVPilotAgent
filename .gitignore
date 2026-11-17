@@ -14,3 +14,5 @@ traces/*
 .cache/
 data/shortlist.json
 data/shortlists/
+data/profile_draft.json
+data/offers_seen.json
