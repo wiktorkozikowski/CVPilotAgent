@@ -154,6 +154,19 @@ i fragmentem wymagań. Żeby agent z niego korzystał, w `.env` ustaw
 `OFFERS_SERVER_TOKEN`. Oferty zwrócone przez serwer zapisują się w
 `data/offers_seen.json` (w `.gitignore`), żeby lista wybranych mogła je pokazać.
 
+Serwer na VPS słucha tylko lokalnie, więc agent łączy się z nim tunelem SSH.
+`start.ps1` otwiera tunel i uruchamia interfejs jednym poleceniem. W `.env`
+ustaw `OFFERS_SERVER_URL=http://127.0.0.1:8100`, `OFFERS_SERVER_TOKEN` (na VPS:
+`sudo grep ^OFFER_SERVER_TOKEN /etc/cvpilot-offer-server.env`) i
+`OFFERS_SSH_TARGET=ubuntu@<adres-vps>`, potem:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File start.ps1
+```
+
+Tunel otwiera się w osobnym oknie (tam wpisuje się hasło do VPS) i zamyka się
+razem z agentem (Ctrl+C). Bez `OFFERS_SSH_TARGET` skrypt uruchamia sam interfejs.
+
 Model to gotowy, niedouczany `paraphrase-multilingual-MiniLM-L12-v2`. Jak
 dzielimy i wektoryzujemy oferty, jak wektoryzujemy profil i jak liczony jest
 wynik dopasowania, opisuje sekcja „Model i wektoryzacja” w `server/README.md`.
