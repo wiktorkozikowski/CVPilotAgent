@@ -1,9 +1,9 @@
 """Builds the offer index from raw offer files.
 
-    uv run python -m offer_server.build_index ../data/offers_sample_*.json --out index
+    uv run python -m offer_server.build_index data/offers_sample_*.json
 
 Accepts offers_sample_*.json (a JSON list) and fetch_all output (*.jsonl).
-Run it again after new offers arrive, then restart the server.
+The running web app loads the new index by itself.
 """
 
 import argparse
@@ -13,12 +13,13 @@ from pathlib import Path
 from offer_server.documents import clean_offers, load_raw_offers
 from offer_server.embedder import FastEmbedder
 from offer_server.index import build_index, save_index
+from offer_server.paths import index_dir
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Buduje indeks ofert.")
     parser.add_argument("inputs", nargs="+", type=Path, help="pliki z ofertami")
-    parser.add_argument("--out", type=Path, default=Path("index"))
+    parser.add_argument("--out", type=Path, default=index_dir())
     parser.add_argument("--model", help="model fastembed (domyślnie z embedder.py)")
     parser.add_argument(
         "--today",

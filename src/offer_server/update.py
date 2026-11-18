@@ -1,9 +1,9 @@
 """Hourly update of the offer database and the index.
 
-    .venv/bin/python -m offer_server.update --seed ../data/offers_sample_*.json
+    uv run python -m offer_server.update --seed data/offers_sample_*.json
 
 One run:
- 1. Reads the raw offer store (store/offers.jsonl, one offer per line). An empty
+ 1. Reads the raw offer store (var/store/offers.jsonl, one offer per line). An empty
     store is first filled from the --seed files.
  2. Only with written consent of the job boards (OFFER_UPDATE_WRITTEN_CONSENT=yes
     or --i-have-written-consent): reads each site's sitemap, drops offers that
@@ -12,8 +12,8 @@ One run:
     is left is downloaded in the next run.
  3. Rebuilds the index: expired offers and duplicates go away, vectors of
     unchanged offers are reused, only new texts are embedded.
- 4. Writes the index in one atomic step; the running server picks it up by
-    itself (see app.py), no restart needed.
+ 4. Writes the index in one atomic step; the running web app picks it up by
+    itself (see holder.py), no restart needed.
 
 Without consent steps 1, 3 and 4 still run, so expired offers disappear.
 """
@@ -32,6 +32,7 @@ from pathlib import Path
 from offer_server.documents import RawOffer, clean_offers, load_raw_offers
 from offer_server.embedder import Embedder, FastEmbedder
 from offer_server.index import build_index, index_path, load_index, save_index
+from offer_server.paths import index_dir, store_dir
 from offer_server.scrape import SITES, fetch, offer_urls, parse_offer
 
 STORE_FILE = "offers.jsonl"
@@ -257,12 +258,8 @@ def run_update(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aktualizacja bazy ofert i indeksu.")
-    parser.add_argument(
-        "--store", type=Path, default=Path(os.getenv("OFFER_SERVER_STORE", "store"))
-    )
-    parser.add_argument(
-        "--index", type=Path, default=Path(os.getenv("OFFER_SERVER_INDEX", "index"))
-    )
+    parser.add_argument("--store", type=Path, default=store_dir())
+    parser.add_argument("--index", type=Path, default=index_dir())
     parser.add_argument(
         "--sites", nargs="+", choices=sorted(SITES), default=sorted(SITES)
     )

@@ -5,7 +5,9 @@ description = "Minimal starter for an individual LLM/VLM agent project"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
+    "fastembed>=0.7,<1",
     "mcp>=2.3.0",
+    "numpy>=1.26,<3",
     "openai>=1.100,<3",
     "pydantic>=2.11,<3",
     "python-dotenv>=1.1,<2",
@@ -22,7 +24,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_project"]
+packages = ["src/agent_project", "src/offer_server"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

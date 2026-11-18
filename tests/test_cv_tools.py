@@ -181,14 +181,14 @@ def test_limit_is_applied():
     assert len(search_offers(make_profile(), offers, limit=2)) == 2
 
 
-@pytest.mark.parametrize("limit", [0, 11])
+@pytest.mark.parametrize("limit", [0, 31])
 def test_limit_outside_range_is_rejected(limit):
     with pytest.raises(ValueError):
         search_offers(make_profile(), [make_offer("any")], limit=limit)
 
 
 def test_run_tool_reports_invalid_limit_as_error(tmp_path):
-    call = {"name": "szukaj_ofert", "arguments": '{"limit": 11}'}
+    call = {"name": "szukaj_ofert", "arguments": '{"limit": 31}'}
 
     result = run_tool(call, make_profile(), [make_offer("any")], tmp_path / "s.json")
 

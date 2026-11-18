@@ -11,7 +11,7 @@ import unicodedata
 
 from agent_project.models import Offer, OfferMatch, Profile, SalaryUnit
 
-MAX_LIMIT = 10
+MAX_LIMIT = 30
 SKILL_WEIGHT = 0.7
 ROLE_WEIGHT = 0.2
 LOCATION_WEIGHT = 0.1

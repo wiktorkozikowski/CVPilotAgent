@@ -1,0 +1,8 @@
+# /etc/caddy/Caddyfile: HTTPS for CVPilot. Caddy gets the certificate itself;
+# the domain's DNS record must point at this server and ports 80 and 443
+# must be open. Replace the domain with your own.
+cvpilot.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+	header Strict-Transport-Security "max-age=31536000"
+}

@@ -37,13 +37,18 @@ Meeting 1.
 - **Planned data:** `data/profile.json` (profil użytkownika) i
   `data/job_offers.json` (przykładowe oferty). Dane są fikcyjne. Prawdziwy
   profil nie trafia do repozytorium.
-- **Tools:** `szukaj_ofert` (tylko odczyt), `dodaj_do_listy` (odwracalny zapis)
-  i `usun_z_listy` (wymaga potwierdzenia użytkownika w aplikacji). Pierwsze dwa
-  są też w serwerze MCP, usuwanie nie. Każde narzędzie waliduje argumenty w kodzie.
+- **Tools:** do odczytu bazy ofert `szukaj_ofert` (ranking dla profilu),
+  `przeszukaj_oferty` (własne zapytanie i filtry), `pokaz_oferte`,
+  `porownaj_z_profilem` i `wybierz_oferty` (wybór agenta z powodami);
+  `dodaj_do_listy` (odwracalny zapis) i `usun_z_listy` (wymaga potwierdzenia
+  użytkownika w aplikacji). `szukaj_ofert` i `dodaj_do_listy` są też w serwerze
+  MCP, usuwanie nie. Każde narzędzie waliduje argumenty w kodzie.
 - **Status:** zrealizowane wyszukiwanie, lista wybranych, pętla z limitem kroków
   (12) i kosztu (0,10 USD na uruchomienie), interfejs w przeglądarce
-  (`agent_project.web`) z przebiegiem agenta pod wynikami. Dane ofert są
-  fikcyjne. Dalej: generowanie CV i wysyłka, dopiero po zgodzie użytkownika.
+  (`agent_project.web`) z logowaniem na jedno konto i przebiegiem agenta pod
+  wynikami. Cały projekt działa jako jedna aplikacja na serwerze, a agent sam
+  przegląda wektorową bazę prawdziwych ofert. Dalej: generowanie CV i wysyłka,
+  dopiero po zgodzie użytkownika.
 - **Evidence:** `evidence/live_*.jsonl` to przebiegi z prawdziwym modelem
   (`uv run python -m agent_project.demo_runs`), `flow_trace.jsonl` i
   `confirmation_trace.jsonl` to przebiegi z mockiem.
@@ -106,77 +111,96 @@ uv run ruff check .
 uv run python -c "from pathlib import Path; from agent_project.agent import SYSTEM_PROMPT, run_agent; from agent_project.models import load_offers, load_profile; from agent_project.llm import OpenRouterClient; data = Path('data'); messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': 'Pokaz oferty pasujace do mojego profilu.'}]; print(run_agent(OpenRouterClient(), messages, load_profile(data / 'profile.json'), load_offers(data / 'job_offers.json'), Path('traces/agent_run.jsonl')))"
 ```
 
-### Agent w przeglądarce (UI)
+### Aplikacja (jedna, na serwerze)
 
-1. Przygotuj projekt: `uv sync --locked`, a w `.env` wpisz `MODEL_NAME` i
-   `OPENROUTER_API_KEY`. Klucz jest potrzebny do rozmowy o profilu i do
-   wyszukiwania. Lista wybranych działa bez niego.
-2. Uruchom serwer:
+Cały projekt działa jako jedna aplikacja na jednej maszynie: strona
+z logowaniem, pętla agenta, baza ofert z indeksem wektorowym i lokalny model
+do wektoryzacji (fastembed). Model językowy to dalej
+`google/gemma-4-26b-a4b-it` przez OpenRouter. Użytkownik korzysta z niej tylko
+przez przeglądarkę, po zalogowaniu.
 
-   ```bash
-   uv run python -m agent_project.web
-   uv sync --locked
-   ```
+```
+przeglądarka ──HTTPS──► Caddy ──► agent_project.web (127.0.0.1:8000)
+                                   ├─ logowanie (jedno konto, var/account.json)
+                                   ├─ agent ──► OpenRouter (gemma)
+                                   │    └─ narzędzia: szukaj_ofert, przeszukaj_oferty,
+                                   │       pokaz_oferte, porownaj_z_profilem, wybierz_oferty
+                                   └─ baza ofert w pamięci (var/index, fastembed)
+offer-update.timer (co godzinę) ──► offer_server.update ──► var/store, var/index
+```
 
-3. Otwórz http://127.0.0.1:8000. Serwer słucha tylko lokalnie. Zatrzymanie:
-   Ctrl+C. Po zmianie w kodzie uruchom serwer ponownie. Zmiany w danych
-   (`data/job_offers.json`) działają bez restartu.
+Agent sam przegląda bazę: zaczyna od rankingu dla profilu, potem szuka
+własnymi zapytaniami z filtrami, sprawdza obiecujące oferty i na końcu
+wybiera te, które poleca, z powodem przy każdej. Ten wybór pokazuje tabela.
+Szczegóły bazy, wektoryzacji i aktualizacji: [docs/baza-ofert.md](docs/baza-ofert.md).
 
-Interfejs ma trzy zakładki:
+**Konto.** Jest jedno i nie da się zarejestrować przez stronę. Zakłada się je
+(albo zmienia hasło) na maszynie z aplikacją:
 
-- **Profil w rozmowie.** Opowiadasz o sobie zwykłym tekstem, a model zadaje
-  pytania o brakujące pola (imię, miasto, stanowiska, umiejętności, języki,
-  poziom). Zebrane dane widzisz na bieżąco po prawej stronie rozmowy. Profil
-  zapisuje się dopiero po kliknięciu „Zatwierdź profil”; sam model nie może go
-  zapisać. Roboczy profil leży w `data/profile_draft.json` (w `.gitignore`),
-  a zapisany w `data/profiles/<id>.json`. „Zacznij od nowa” usuwa rozmowę i
-  roboczy profil.
-- **Szukaj dopasowań.** Wybierz profil i kliknij „Szukaj dopasowań”. Agent
-  wywołuje model z OpenRouter, który wybiera narzędzia (`szukaj_ofert`, a w razie
-  potrzeby `dodaj_do_listy`). Strona pokazuje odpowiedź modelu, tabelę ofert z
-  punktacją, przebieg każdego kroku i ścieżkę do śladu w `traces/`. Przycisk
-  „Dodaj do listy” zapisuje ofertę na liście profilu, dla którego szukałeś.
-- **Lista wybranych.** Wybierz profil, żeby zobaczyć jego listę. Usunięcie oferty
-  wymaga potwierdzenia w oknie przeglądarki. Listy są w
-  `data/shortlists/<id>.json`.
+```bash
+uv run python -m agent_project.auth      # pyta o login i hasło (min. 10 znaków)
+```
+
+W `var/account.json` zapisuje się tylko skrót hasła (scrypt). Sesja trwa 12 h
+i kończy się też przy restarcie aplikacji. Po 5 złych hasłach z rzędu logowanie
+jest zablokowane na 15 minut. Ciasteczko sesji ma `HttpOnly`, `SameSite=Strict`
+i `Secure`, a zapytania z innych stron są odrzucane.
+
+**Uruchomienie lokalne** (Windows albo Linux):
+
+```bash
+uv sync --locked
+cp .env.example .env                     # MODEL_NAME i OPENROUTER_API_KEY
+uv run python -m offer_server.update --seed data/offers_sample_justjoin.json data/offers_sample_rocketjobs.json
+uv run python -m agent_project.auth
+uv run python -m agent_project.web       # albo: powershell -File start.ps1
+```
+
+Potem otwórz http://127.0.0.1:8000 i zaloguj się. Pierwsza aktualizacja
+pobiera model (ok. 240 MB) do `var/models_cache/`.
+
+**Wdrożenie na serwer (Linux, systemd).** Pliki w `deploy/` zakładają
+repozytorium sklonowane do `/home/ubuntu/server/CVpilot` i użytkownika
+`ubuntu`. Na innej maszynie zmień ścieżki i użytkownika.
+
+```bash
+cd ~/server/CVpilot && git pull && uv sync --locked --no-dev
+sudo cp deploy/cvpilot.env.example /etc/cvpilot.env
+sudo nano /etc/cvpilot.env && sudo chmod 600 /etc/cvpilot.env   # klucz OpenRouter
+.venv/bin/python -m agent_project.auth                          # konto
+sudo cp deploy/cvpilot.service deploy/offer-update.service deploy/offer-update.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start offer-update          # pierwsza baza i indeks; postęp: journalctl -u offer-update -f
+sudo systemctl enable --now cvpilot offer-update.timer
+journalctl -u cvpilot -f
+```
+
+Aplikacja słucha tylko na `127.0.0.1`. Do internetu wystawia ją Caddy
+z HTTPS (`deploy/Caddyfile.example`: wpisz swoją domenę, otwórz porty 80
+i 443). Bez HTTPS hasło szłoby przez sieć jawnie, dlatego portu 8000 nie
+otwiera się w zaporze. Stary serwer ofert (`offer-server.service`, port 8100)
+jest już niepotrzebny: `sudo systemctl disable --now offer-server`.
+
+Interfejs:
+
+- **Profil w rozmowie.** Opowiadasz o sobie zwykłym tekstem, a model pyta
+  o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
+  profil”; sam model nie może go zapisać. W rozmowie model może też przeglądać
+  bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
+- **Szukaj ofert.** Agent przegląda bazę i wybiera oferty. Tabela po prawej
+  pokazuje jego wybór z powodem przy każdej ofercie, a pod nią przebieg
+  każdego kroku i ścieżkę do śladu w `traces/`.
+- **Lista wybranych.** Każdy profil ma własną listę
+  (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
+  w oknie przeglądarki.
 
 Ograniczenia każdego uruchomienia: najwyżej 12 kroków modelu i 0,10 USD
 (`MAX_RUN_COST_USD` w `agent.py`).
 
-### Serwer ofert (prawdziwe oferty, wyszukiwanie wektorowe)
-
-Prawdziwe oferty obsługuje osobny serwer w folderze `server/` (własne
-środowisko uv, instrukcja w `server/README.md`). Agent wysyła mu profil bez
-imienia, e-maila, telefonu i linków. Serwer wektoryzuje go lokalnym modelem
-(fastembed) i zwraca kandydatów z wynikiem, niezgodnościami z preferencjami
-i fragmentem wymagań. Żeby agent z niego korzystał, w `.env` ustaw
-`OFFERS_SERVER_URL` (np. `http://127.0.0.1:8100`) i, jeśli serwer ma token,
-`OFFERS_SERVER_TOKEN`. Oferty zwrócone przez serwer zapisują się w
-`data/offers_seen.json` (w `.gitignore`), żeby lista wybranych mogła je pokazać.
-
-Serwer na VPS słucha tylko lokalnie, więc agent łączy się z nim tunelem SSH.
-`start.ps1` otwiera tunel i uruchamia interfejs jednym poleceniem. W `.env`
-ustaw `OFFERS_SERVER_URL=http://127.0.0.1:8100`, `OFFERS_SERVER_TOKEN` (na VPS:
-`sudo grep ^OFFER_SERVER_TOKEN /etc/cvpilot-offer-server.env`) i
-`OFFERS_SSH_TARGET=ubuntu@<adres-vps>`, potem:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File start.ps1
-```
-
-Tunel otwiera się w osobnym oknie (tam wpisuje się hasło do VPS) i zamyka się
-razem z agentem (Ctrl+C). Bez `OFFERS_SSH_TARGET` skrypt uruchamia sam interfejs.
-
-Model to gotowy, niedouczany `paraphrase-multilingual-MiniLM-L12-v2`. Jak
-dzielimy i wektoryzujemy oferty, jak wektoryzujemy profil i jak liczony jest
-wynik dopasowania, opisuje sekcja „Model i wektoryzacja” w `server/README.md`.
-Bazę ofert i indeks odświeża co godzinę `offer_server.update` (timer systemd).
-
-Bez `OFFERS_SERVER_URL` agent szuka lokalnie w `data/job_offers.json`. To 24 fikcyjne oferty. Aby dodać własne,
-dopisz obiekty z polami `id`, `title`, `company`, `location`, `required_skills`,
-`source` i `url`. Stanowiska i umiejętności do formularza bierze się z
-`data/options.json`.
+Testy (`uv run pytest`) nie łączą się z modelem i nie pobierają modelu do
+wektoryzacji: indeks budują z `HashingEmbedder`, a aplikację uruchamiają bez
+logowania (`auth=None`), co `main()` wyklucza. Plik `data/job_offers.json`
+(24 fikcyjne oferty) służy już tylko testom i serwerowi MCP bez indeksu.
 
 Use the assignments published on the course website as the source of truth.
-
-rocket jobs 
+ 

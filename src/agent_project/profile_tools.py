@@ -122,6 +122,12 @@ def _save_draft(draft_path: Path, draft: dict[str, Any]) -> None:
     )
 
 
+def load_profile_into_draft(profile: Profile, draft_path: Path) -> dict[str, Any]:
+    """Replace the draft with a saved profile, so the chat can edit it."""
+    _save_draft(draft_path, profile.model_dump(mode="json", exclude_none=True))
+    return get_draft(draft_path)
+
+
 def missing_fields(draft: dict[str, Any]) -> list[str]:
     return [field for field in REQUIRED_FIELDS if not draft.get(field)]
 
@@ -212,17 +218,75 @@ def add_entry(section: str, entry: dict[str, Any], draft_path: Path) -> dict[str
     return update_draft({section: entries}, draft_path)
 
 
+def _bad_index(index: Any, items: list) -> bool:
+    return (
+        isinstance(index, bool)
+        or not isinstance(index, int)
+        or not 0 <= index < len(items)
+    )
+
+
+def replace_item(
+    section: Any, index: Any, value: Any, draft_path: Path
+) -> dict[str, Any]:
+    """Correct one role or skill in place. Used by the page, not the model."""
+    if section not in LIST_SECTIONS:
+        return _validation_error(f"Nieznana sekcja: {section}")
+    if not isinstance(value, str) or not value.strip():
+        return _validation_error("Pozycja nie może być pusta.")
+    items = list(_load_draft(draft_path).get(section, []))
+    if _bad_index(index, items):
+        return {"status": "not_found"}
+    value = value.strip()
+    if any(
+        other.casefold() == value.casefold()
+        for position, other in enumerate(items)
+        if position != index
+    ):
+        return _validation_error("Ta pozycja już jest na liście.")
+    items[index] = value
+    return update_draft({section: items}, draft_path)
+
+
+def save_entry(
+    section: Any, entry: Any, draft_path: Path, index: Any = None
+) -> dict[str, Any]:
+    """Add an entry, or with `index` replace that one. Used by the page."""
+    if section not in ENTRY_MODELS:
+        return _validation_error(f"Nieznana sekcja: {section}")
+    if not isinstance(entry, dict):
+        return _validation_error("Wpis musi być obiektem JSON.")
+    if index is None:
+        return add_entry(section, entry, draft_path)
+    try:
+        validated = ENTRY_MODELS[section].model_validate(entry)
+    except ValidationError as error:
+        first = error.errors()[0]
+        location = ".".join(str(part) for part in first["loc"])
+        return _validation_error(f"Niepoprawna wartość pola {location}: {first['msg']}")
+
+    current = list(_load_draft(draft_path).get(section, []))
+    if section == "languages":
+        current = languages_from_names(current)
+    if _bad_index(index, current):
+        return {"status": "not_found"}
+    if section == "languages" and any(
+        str(item.get("name", "")).casefold() == validated.name.casefold()
+        for position, item in enumerate(current)
+        if position != index
+    ):
+        return _validation_error("Ten język już jest na liście.")
+    current[index] = validated.model_dump(exclude_none=True)
+    return update_draft({section: current}, draft_path)
+
+
 def remove_item(section: str, index: int, draft_path: Path) -> dict[str, Any]:
     """Remove one item by its position (0-based). Used by the page, not the model."""
     if section not in (*LIST_SECTIONS, *ENTRY_MODELS):
         return _validation_error(f"Nieznana sekcja: {section}")
     draft = _load_draft(draft_path)
     items = draft.get(section, [])
-    if (
-        isinstance(index, bool)
-        or not isinstance(index, int)
-        or not 0 <= index < len(items)
-    ):
+    if _bad_index(index, items):
         return {"status": "not_found"}
     del items[index]
     _save_draft(draft_path, draft)
@@ -234,11 +298,17 @@ def remove_item(section: str, index: int, draft_path: Path) -> dict[str, Any]:
 
 
 def finalize_profile(
-    draft_path: Path, profiles_dir: Path, confirmed: bool
+    draft_path: Path,
+    profiles_dir: Path,
+    confirmed: bool,
+    profile_id: str | None = None,
+    keep_draft: bool = False,
 ) -> dict[str, Any]:
     """Sensitive: save the draft as a profile, only after the user confirmed.
 
     `confirmed` must come from the application, never from the model's arguments.
+    With `profile_id` the draft overwrites that saved profile instead of adding a
+    new one; with `keep_draft` the draft stays, so the chat can go on editing it.
     """
     draft = _load_draft(draft_path)
     missing = missing_fields(draft)
@@ -248,8 +318,9 @@ def finalize_profile(
         return {"status": "confirmation_required"}
 
     profile = Profile.model_validate(draft)
-    profile_id = save_profile(profiles_dir, profile)
-    draft_path.unlink(missing_ok=True)
+    profile_id = save_profile(profiles_dir, profile, profile_id)
+    if not keep_draft:
+        draft_path.unlink(missing_ok=True)
     return {"status": "saved", "profile_id": profile_id}
 
 
@@ -577,6 +648,51 @@ PROFILE_SYSTEM_PROMPT = (
     "zatwierdz_profil."
 )
 
+# Added to the chat only when the app can search offers (see run_profile_agent).
+CHAT_SEARCH_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "szukaj_ofert",
+        "description": (
+            "Wyszukuje oferty pracy dla zapisanego profilu użytkownika. Wyniki "
+            "pojawiają się w tabeli po prawej stronie strony. Zwraca status: ok "
+            "(z listą ofert), no_profile (profil nie jest jeszcze zapisany) albo "
+            "error."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30,
+                    "description": "Ile ofert znaleźć, od 1 do 30.",
+                }
+            },
+            "required": ["limit"],
+        },
+    },
+}
+
+CHAT_SEARCH_PROMPT = (
+    "\nWyszukiwanie ofert: gdy użytkownik chce zobaczyć oferty (np. „szukaj "
+    "ofert”), a nie podał, ile ich chce, zapytaj o liczbę od 1 do 30. Potem "
+    "wywołaj szukaj_ofert z tą liczbą. Jeśli narzędzie zwróci no_profile, napisz, "
+    "że najpierw trzeba kliknąć „Zatwierdź profil”. Po wyszukaniu napisz krótko, "
+    "że oferty są w tabeli po prawej, i wymień najwyżej trzy najlepsze (stanowisko "
+    "i firma). Jeśli któraś ma niepuste conflicts, powiedz, co nie pasuje. Nie "
+    "wymyślaj ofert."
+)
+
+# Added when the chat can also browse the offer database itself.
+CHAT_DB_PROMPT = (
+    "\nPrzeglądanie bazy ofert: na pytania o konkretne oferty, firmy, miasta, "
+    "technologie albo pokrewne stanowiska użyj przeszukaj_oferty z własnym "
+    "zapytaniem i filtrami. Szczegóły jednej oferty da pokaz_oferte, a jej "
+    "dopasowanie do zapisanego profilu porownaj_z_profilem. Podawaj tylko "
+    "oferty z wyników narzędzi, ze stanowiskiem, firmą i id."
+)
+
 
 ENTRY_TOOLS = {
     "dodaj_doswiadczenie": "experience",
@@ -630,8 +746,34 @@ def run_profile_agent(
     confirm: Callable[[], bool] = _deny,
     max_steps: int = 12,
     max_cost_usd: float = MAX_RUN_COST_USD,
+    search: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    extra_tools: list[dict[str, Any]] | None = None,
+    extra_dispatch: Callable[[dict], str] | None = None,
 ) -> str:
-    """Run the chat that builds a profile, using the shared agent loop."""
+    """Run the chat that builds a profile, using the shared agent loop.
+
+    With `search` the model also gets szukaj_ofert; `search` receives the tool's
+    arguments and returns the result the model sees. `extra_tools` (e.g. the
+    offer database tools) are run by `extra_dispatch`.
+    """
+    tools = PROFILE_TOOLS if search is None else [*PROFILE_TOOLS, CHAT_SEARCH_TOOL]
+    extra_names = {tool["function"]["name"] for tool in extra_tools or []}
+    if extra_tools and extra_dispatch is not None:
+        tools = [*tools, *extra_tools]
+
+    def dispatch(call: dict) -> str:
+        if extra_dispatch is not None and call["name"] in extra_names:
+            return extra_dispatch(call)
+        if search is not None and call["name"] == "szukaj_ofert":
+            try:
+                arguments = json.loads(call["arguments"] or "{}")
+            except json.JSONDecodeError:
+                return _error("Argumenty narzędzia nie są poprawnym JSON-em.")
+            if not isinstance(arguments, dict):
+                return _error("Argumenty narzędzia muszą być obiektem JSON.")
+            return json.dumps(search(arguments), ensure_ascii=False)
+        return run_profile_tool(call, draft_path, profiles_dir, confirm)
+
     return run_agent(
         client,
         messages,
@@ -640,6 +782,6 @@ def run_profile_agent(
         trace_path=trace_path,
         max_steps=max_steps,
         max_cost_usd=max_cost_usd,
-        tools=PROFILE_TOOLS,
-        dispatch=lambda call: run_profile_tool(call, draft_path, profiles_dir, confirm),
+        tools=tools,
+        dispatch=dispatch,
     )

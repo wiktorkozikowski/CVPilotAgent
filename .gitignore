@@ -18,3 +18,5 @@ data/profile_draft.json
 data/offers_seen.json
 # Offers downloaded on the VPS (fetch_all.py); they must not reach git.
 agent_project/data/
+# Offer store, vector index and embedding model (offer_server.update)
+var/

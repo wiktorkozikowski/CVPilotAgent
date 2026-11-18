@@ -47,6 +47,28 @@ def remove_from_shortlist(
     return ShortlistResult(status="removed", offer_id=offer_id)
 
 
+def load_seen_offers(path: Path) -> list[Offer]:
+    """Offers the agent showed earlier, so the shortlist can show them even after
+    they left the offer database."""
+    if not path.exists():
+        return []
+    return [Offer.model_validate(item) for item in json.loads(path.read_text("utf-8"))]
+
+
+def remember_offers(path: Path, offers: list[Offer]) -> None:
+    by_id = {offer.id: offer for offer in load_seen_offers(path)}
+    by_id.update({offer.id: offer for offer in offers})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            [offer.model_dump(exclude_none=True) for offer in by_id.values()],
+            ensure_ascii=False,
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _save_shortlist(path: Path, shortlist: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

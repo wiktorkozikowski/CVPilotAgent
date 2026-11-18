@@ -31,7 +31,7 @@ def test_limit_must_be_integer(tmp_path) -> None:
 
 def test_limit_out_of_range_is_an_error(tmp_path) -> None:
     assert _run(_call("szukaj_ofert", '{"limit": 0}'), tmp_path)["status"] == "error"
-    assert _run(_call("szukaj_ofert", '{"limit": 11}'), tmp_path)["status"] == "error"
+    assert _run(_call("szukaj_ofert", '{"limit": 31}'), tmp_path)["status"] == "error"
 
 
 def test_broken_json_arguments_are_an_error(tmp_path) -> None:

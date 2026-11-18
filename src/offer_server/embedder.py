@@ -12,10 +12,10 @@ from typing import Protocol
 
 import numpy as np
 
+from offer_server.paths import model_cache_dir
 from offer_server.text import plain
 
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-DEFAULT_CACHE = Path(__file__).resolve().parents[1] / "models_cache"
 
 
 class Embedder(Protocol):
@@ -35,8 +35,8 @@ class FastEmbedder:
     def __init__(self, model: str | None = None, cache_dir: Path | None = None) -> None:
         from fastembed import TextEmbedding  # heavy import, only when used
 
-        self.name = model or os.getenv("OFFER_SERVER_MODEL") or DEFAULT_MODEL
-        cache = cache_dir or Path(os.getenv("OFFER_SERVER_MODEL_CACHE", DEFAULT_CACHE))
+        self.name = model or os.getenv("OFFERS_MODEL") or DEFAULT_MODEL
+        cache = cache_dir or model_cache_dir()
         self._model = TextEmbedding(model_name=self.name, cache_dir=str(cache))
 
     def embed(self, texts: list[str]) -> np.ndarray:

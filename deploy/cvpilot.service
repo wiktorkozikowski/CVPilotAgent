@@ -1,0 +1,28 @@
+# The CVPilot web app: page, login, agent and offer index in one process.
+# Paths for a server where the repository is cloned to /home/ubuntu/server/CVpilot
+# and runs as ubuntu; on another machine change User, Group and every path.
+[Unit]
+Description=CVPilot web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/server/CVpilot
+# OPENROUTER_API_KEY, MODEL_NAME and the CVPILOT_* settings (mode 600).
+EnvironmentFile=/etc/cvpilot.env
+# The virtual environment made by `uv sync`; no uv needed at run time.
+ExecStart=/home/ubuntu/server/CVpilot/.venv/bin/python -m agent_project.web
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+# Profiles, shortlists, traces; var/ holds the index (read) and the account.
+ReadWritePaths=/home/ubuntu/server/CVpilot/data /home/ubuntu/server/CVpilot/traces /home/ubuntu/server/CVpilot/var
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

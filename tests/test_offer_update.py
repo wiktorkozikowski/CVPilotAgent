@@ -7,9 +7,9 @@ from itertools import pairwise
 
 import pytest
 
-from offer_server import app as app_module
-from offer_server.app import IndexHolder
+from offer_server import holder as holder_module
 from offer_server.embedder import HashingEmbedder
+from offer_server.holder import IndexHolder
 from offer_server.index import build_index, load_index, save_index
 from offer_server.scrape import parse_offer
 from offer_server.update import (
@@ -259,8 +259,8 @@ def test_employment_type_given_as_text_becomes_a_list() -> None:
     assert record["description"] == "Wymagania\nSQL\nPython"
 
 
-def test_running_server_picks_up_a_new_index(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(app_module, "RELOAD_CHECK_SECONDS", 0)
+def test_running_app_picks_up_a_new_index(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(holder_module, "RELOAD_CHECK_SECONDS", 0)
     folder = tmp_path / "index"
     board = FakeBoard({"a": "Data Analyst"})
     run(tmp_path, board)
@@ -275,8 +275,8 @@ def test_running_server_picks_up_a_new_index(tmp_path, monkeypatch) -> None:
     assert len(holder.get().offers) == 2
 
 
-def test_server_keeps_old_index_when_new_one_has_another_model(tmp_path, monkeypatch):
-    monkeypatch.setattr(app_module, "RELOAD_CHECK_SECONDS", 0)
+def test_app_keeps_old_index_when_new_one_has_another_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(holder_module, "RELOAD_CHECK_SECONDS", 0)
     folder = tmp_path / "index"
     run(tmp_path, FakeBoard({"a": "Data Analyst"}))
     holder = IndexHolder(load_index(folder), HashingEmbedder(), folder)

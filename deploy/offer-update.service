@@ -1,0 +1,24 @@
+# Paths for a server where the repository is cloned to /home/ubuntu/server/CVpilot
+# and runs as ubuntu; on another machine change User, Group and every path.
+[Unit]
+Description=CVPilot offer database update (one run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/server/CVpilot
+EnvironmentFile=/etc/cvpilot.env
+# --seed is read only while the offer store is empty: the first run fills it
+# from the offer files in data/ (samples and fetch_all.py output).
+ExecStart=/home/ubuntu/server/CVpilot/.venv/bin/python -m offer_server.update --seed /home/ubuntu/server/CVpilot/data
+# A run downloads for at most 50 minutes; this is the hard stop.
+TimeoutStartSec=58min
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/server/CVpilot/var
+PrivateTmp=true

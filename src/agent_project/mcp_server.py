@@ -11,19 +11,32 @@ from mcp.server.mcpserver import MCPServer
 
 from agent_project.matching import search_offers
 from agent_project.models import load_offers, load_profile
-from agent_project.offers_client import (
-    OffersServerClient,
+from agent_project.offer_db import OfferDB
+from agent_project.profile_tools import DRAFT_PATH, get_draft, update_draft
+from agent_project.shortlist import (
+    add_to_shortlist,
     load_seen_offers,
     remember_offers,
 )
-from agent_project.profile_tools import DRAFT_PATH, get_draft, update_draft
-from agent_project.shortlist import add_to_shortlist
+from offer_server.index import index_path
+from offer_server.paths import index_dir
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 PROFILE_PATH = DATA_DIR / "profile.json"
 OFFERS_PATH = DATA_DIR / "job_offers.json"
 SHORTLIST_PATH = DATA_DIR / "shortlist.json"
 SEEN_OFFERS_PATH = DATA_DIR / "offers_seen.json"
+
+_db: OfferDB | None = None
+
+
+def offer_db() -> OfferDB | None:
+    """The offer database when its index exists, else None (job_offers.json)."""
+    global _db
+    if _db is None and index_path(index_dir()).exists():
+        _db = OfferDB.open()
+    return _db
+
 
 server = MCPServer(
     "cv-pilot",
@@ -37,14 +50,14 @@ server = MCPServer(
 def szukaj_ofert(limit: int = 10) -> list[dict]:
     """Znajduje oferty pasujące do profilu użytkownika, od najlepiej dopasowanych.
 
-    limit: od 1 do 10.
+    limit: od 1 do 30.
     """
     profile = load_profile(PROFILE_PATH)
-    client = OffersServerClient.from_env()
-    if client is None:
+    db = offer_db()
+    if db is None:
         matches = search_offers(profile, load_offers(OFFERS_PATH), limit=limit)
     else:
-        matches = client.search(profile, limit)
+        matches = db.match_profile(profile, limit)
         remember_offers(SEEN_OFFERS_PATH, [match.offer for match in matches])
     return [match.model_dump(mode="json") for match in matches]
 
@@ -56,6 +69,11 @@ def dodaj_do_listy(offer_id: str) -> dict:
     Zwraca status: added, already_exists albo not_found.
     """
     offers = load_offers(OFFERS_PATH) + load_seen_offers(SEEN_OFFERS_PATH)
+    db = offer_db()
+    found = db.offer(offer_id) if db is not None else None
+    if found is not None:
+        remember_offers(SEEN_OFFERS_PATH, [found])
+        offers.append(found)
     result = add_to_shortlist(offer_id, offers, SHORTLIST_PATH)
     return result.model_dump(mode="json")
 

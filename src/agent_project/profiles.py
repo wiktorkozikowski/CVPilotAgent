@@ -36,15 +36,25 @@ def load_profile_by_id(profiles_dir: Path, profile_id: str) -> Profile:
     return Profile.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def save_profile(profiles_dir: Path, profile: Profile) -> str:
-    """Save a new profile under a unique id derived from its name; returns the id."""
+def save_profile(
+    profiles_dir: Path, profile: Profile, profile_id: str | None = None
+) -> str:
+    """Save a profile and return its id.
+
+    Without `profile_id` it is a new profile under a unique id derived from its
+    name; with one, that profile is overwritten.
+    """
     profiles_dir.mkdir(parents=True, exist_ok=True)
-    base = _slugify(profile.name)
-    profile_id = base
-    counter = 2
-    while (profiles_dir / f"{profile_id}.json").exists():
-        profile_id = f"{base}-{counter}"
-        counter += 1
+    if profile_id is not None:
+        if not PROFILE_ID_PATTERN.fullmatch(profile_id):
+            raise KeyError(profile_id)
+    else:
+        base = _slugify(profile.name)
+        profile_id = base
+        counter = 2
+        while (profiles_dir / f"{profile_id}.json").exists():
+            profile_id = f"{base}-{counter}"
+            counter += 1
     path = profiles_dir / f"{profile_id}.json"
     path.write_text(
         json.dumps(profile.model_dump(exclude_none=True), ensure_ascii=False, indent=2)
