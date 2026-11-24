@@ -186,6 +186,42 @@ i 443). Bez HTTPS hasło szłoby przez sieć jawnie, dlatego portu 8000 nie
 otwiera się w zaporze. Stary serwer ofert (`offer-server.service`, port 8100)
 jest już niepotrzebny: `sudo systemctl disable --now offer-server`.
 
+**Połączenie bez domeny (tunel SSH).** Na swoim komputerze otwórz tunel
+i zostaw okno otwarte:
+
+```bash
+ssh -L 8000:127.0.0.1:8000 ubuntu@ADRES_SERWERA
+```
+
+Potem w przeglądarce wejdź na http://127.0.0.1:8000 (albo
+http://localhost:8000). Adres `http://ADRES_SERWERA:8000` nie działa, bo
+aplikacja nie słucha na publicznym adresie. Tunel trzeba otworzyć ponownie
+po zamknięciu okna, zerwaniu połączenia albo restarcie serwera; restart
+samej aplikacji go nie przerywa.
+
+**Aktualizacja.** Pobranie nowej wersji z gałęzi, którą śledzi serwer,
+doinstalowanie zależności i restart aplikacji:
+
+```bash
+cd ~/server/CVpilot && git pull && uv sync --locked --no-dev && sudo systemctl restart cvpilot
+git log --oneline -1 && systemctl status cvpilot   # wersja i stan aplikacji
+```
+
+`git pull` pobiera tylko gałąź, na której jest serwer (`git branch
+--show-current`); nowa gałąź na GitHubie wymaga `git checkout <gałąź>`
+albo scalenia jej z tą śledzoną. Zmienione na serwerze pliki danych
+(np. `data/profiles/`) zostają; jeśli `git pull` zgłosi, że nadpisałby
+zmiany, użyj `git stash`, `git pull`, `git stash pop`. Restart kończy
+sesje, więc po nim trzeba się zalogować ponownie.
+
+**Nowe hasło.** Hasła nie da się odczytać (zapisany jest tylko skrót). Nowe
+ustawia się tak samo jak konto, a restart je wczytuje i zdejmuje blokadę
+po złych hasłach:
+
+```bash
+cd ~/server/CVpilot && .venv/bin/python -m agent_project.auth && sudo systemctl restart cvpilot
+```
+
 Interfejs:
 
 - **Profil w rozmowie.** Opowiadasz o sobie zwykłym tekstem, a model pyta
