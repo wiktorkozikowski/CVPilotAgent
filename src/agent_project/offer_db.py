@@ -9,6 +9,7 @@ full, and one offer against the profile.
 Nothing here writes to the database; offer_server.update does that.
 """
 
+from datetime import date
 from pathlib import Path
 from typing import Any, get_args
 
@@ -19,11 +20,14 @@ from offer_server.holder import IndexHolder
 from offer_server.index import load_index
 from offer_server.paths import index_dir
 from offer_server.ranking import (
+    LEVEL_MAX_YEARS,
     MAX_LIMIT,
     SearchProfile,
     conflicts,
+    level_conflicts,
     matched_skills,
     offer_levels,
+    required_years,
     search,
     title_score,
 )
@@ -56,7 +60,30 @@ def search_profile(profile: Profile) -> SearchProfile:
         {"position": job.position, "description": job.description}
         for job in profile.experience
     ]
+    data["years_experience"] = years_of_experience(profile)
     return SearchProfile.model_validate(data)
+
+
+def _month(value: str, today: date) -> float:
+    """ "2021" or "2021-03" as a year with a fraction; "obecnie" is today."""
+    if value == "obecnie":
+        return today.year + (today.month - 1) / 12
+    year, _, month = value.partition("-")
+    return int(year) + ((int(month) - 1) / 12 if month else 0)
+
+
+def years_of_experience(profile: Profile, today: date | None = None) -> float | None:
+    """Years from the first job's start to the last job's end (or today).
+
+    Gaps count too, so this leans generous: it only decides which offers ask
+    for clearly more experience than the user has.
+    """
+    if not profile.experience:
+        return None
+    today = today or date.today()
+    starts = [_month(job.start, today) for job in profile.experience]
+    ends = [_month(job.end or "obecnie", today) for job in profile.experience]
+    return round(max(0.0, max(ends) - min(starts)), 1)
 
 
 def to_offer(doc: OfferDoc) -> Offer:
@@ -111,6 +138,7 @@ def _summary(doc: OfferDoc) -> dict[str, Any]:
         "remote": _is_remote(doc),
         "employment_type": doc.employment_type,
         "salary": _salary(doc),
+        "years_required": required_years(doc),
     }
 
 
@@ -183,11 +211,14 @@ class OfferDB:
         level: str | None = None,
         employment_type: str | None = None,
         exclude: set[str] | None = None,
+        profile: Profile | None = None,
     ) -> list[dict[str, Any]]:
         """Offers closest in meaning to `query` that pass the filters.
 
-        Offers whose title names no level pass a `level` filter, since most
-        titles do not say.
+        `level` drops offers whose title names another level or whose text asks
+        for more years than that level has; titles without a level pass, since
+        most do not say. With `profile`, offers that do not fit its level or
+        experience are dropped too, and each result lists its conflicts.
         """
         query = query.strip()
         if not query or len(query) > MAX_QUERY_CHARS:
@@ -201,6 +232,7 @@ class OfferDB:
             kinds = ", ".join(sorted(KNOWN_EMPLOYMENT_TYPES))
             raise ValueError(f"forma_zatrudnienia to jedno z: {kinds}.")
 
+        wanted = search_profile(profile) if profile is not None else None
         index = self.holder.get()
         vector = self.holder.embedder.embed([query])[0]
         similarities = index.offer_scores(vector)
@@ -218,20 +250,31 @@ class OfferDB:
                 levels = offer_levels(doc.title)
                 if levels and level not in levels:
                     continue
+                years = required_years(doc)
+                if years is not None and years > LEVEL_MAX_YEARS[level]:
+                    continue
+            if wanted is not None and level_conflicts(wanted, doc):
+                continue
             if employment_type is not None and employment_type not in (
                 doc.employment_type or []
             ):
                 continue
-            found.append(
-                {
-                    **_summary(doc),
-                    "similarity": round(float(similarities[position]), 3),
-                    "requirements": _short(excerpt(doc), BROWSE_EXCERPT_CHARS),
-                }
-            )
+            item = {
+                **_summary(doc),
+                "similarity": round(float(similarities[position]), 3),
+                "requirements": _short(excerpt(doc), BROWSE_EXCERPT_CHARS),
+            }
+            if wanted is not None:
+                item["conflicts"] = conflicts(wanted, doc)
+            found.append(item)
             if len(found) == limit:
                 break
         return found
+
+    def level_problems(self, profile: Profile, offer_id: str) -> list[str]:
+        """Why the offer is above (or beside) the user's level; empty if fine."""
+        doc = self.get(offer_id)
+        return [] if doc is None else level_conflicts(search_profile(profile), doc)
 
     def details(self, offer_id: str) -> dict[str, Any] | None:
         doc = self.get(offer_id)

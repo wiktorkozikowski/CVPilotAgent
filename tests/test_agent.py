@@ -53,6 +53,36 @@ def test_agent_finds_offers(tmp_path) -> None:
     assert result["offers"][0]["offer"]["title"] == "Junior Data Analyst"
 
 
+def test_agent_runs_every_tool_call_of_one_reply(tmp_path) -> None:
+    profile = load_profile(DATA / "profile.json")
+    offers = load_offers(DATA / "job_offers.json")
+    client = MockClient(
+        [
+            {
+                "text": None,
+                "tool_calls": [
+                    {"id": "a", "name": "szukaj_ofert", "arguments": '{"limit": 1}'},
+                    {"id": "b", "name": "szukaj_ofert", "arguments": '{"limit": 2}'},
+                ],
+                "usage": {},
+                "latency_ms": 0,
+            },
+            {"text": "Gotowe.", "tool_calls": [], "usage": {}, "latency_ms": 0},
+        ]
+    )
+    messages = [{"role": "user", "content": "Pokaż oferty."}]
+
+    answer = run_agent(client, messages, profile, offers, tmp_path / "trace.jsonl")
+
+    assert answer == "Gotowe."
+    # One assistant message with both calls, then one answer per call, in order.
+    assistant = [m for m in messages if m["role"] == "assistant"][0]
+    assert [c["id"] for c in assistant["tool_calls"]] == ["a", "b"]
+    tool_messages = [m for m in messages if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in tool_messages] == ["a", "b"]
+    assert [len(json.loads(m["content"])["offers"]) for m in tool_messages] == [1, 2]
+
+
 def test_agent_stops_when_run_cost_exceeds_limit(tmp_path) -> None:
     profile = load_profile(DATA / "profile.json")
     offers = load_offers(DATA / "job_offers.json")

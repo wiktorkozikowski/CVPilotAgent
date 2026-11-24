@@ -10,10 +10,13 @@ from agent_project.shortlist import add_to_shortlist, remove_from_shortlist
 from agent_project.tracing import append_trace
 
 MAX_RUN_COST_USD = 0.10
+MAX_STEPS = 24
 # The model sees this much of each offer's requirements; the rest stays for CVs.
 REQUIREMENTS_FOR_MODEL = 400
 MAX_PICKS = 30
 MAX_REASON_CHARS = 300
+# The agent's verdict on an offer: recommended, or shown with a warning.
+VERDICTS = ("polecam", "uwaga")
 
 # Finds offers for a profile: the offer database, or the local matching.
 SearchFn = Callable[[Profile, int], list[OfferMatch]]
@@ -98,7 +101,9 @@ DB_TOOLS: list[dict[str, Any]] = [
                 "Użyj, by znaleźć oferty, których szukaj_ofert nie pokazał: inne "
                 "nazwy stanowisk, pokrewne role, konkretne umiejętności. Zwraca "
                 "krótkie opisy ofert z polem similarity (0-1, wyżej = bliżej "
-                "zapytania). Oferty bez poziomu w tytule przechodzą filtr poziom."
+                "zapytania), years_required (lata doświadczenia z treści, jeśli "
+                "podane) i conflicts. Oferty powyżej poziomu użytkownika są "
+                "pomijane."
             ),
             "parameters": {
                 "type": "object",
@@ -173,11 +178,16 @@ DB_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "wybierz_oferty",
             "description": (
-                "Zapisuje Twój wybór: oferty, które polecasz użytkownikowi, od "
-                "najlepszej, każdą z krótkim powodem. Wywołaj raz, na końcu, po "
-                "przejrzeniu ofert; kolejne wywołanie zastępuje poprzedni wybór. "
-                "Zwraca status ok, listę wybranych id (chosen) i id, których nie "
-                "ma w bazie (unknown)."
+                "Zapisuje Twoją ocenę ofert: oferty z rankingu szukaj_ofert "
+                "(z oceną polecam albo uwaga i krótkim powodem) oraz oferty "
+                "znalezione przez przeszukaj_oferty, które dodajesz do wyników. "
+                "Ranking zostaje pokazany w całości; oferty z oceną uwaga "
+                "dostają ostrzeżenie, a nowe oferty trafiają pod ranking. "
+                "Wywołaj raz, na końcu; kolejne wywołanie zastępuje poprzednie. "
+                "Oferty powyżej poziomu użytkownika (tytuł albo wymagane lata "
+                "doświadczenia) są odrzucane (refused). Zwraca status ok, "
+                "zapisane id (chosen), odrzucone z powodem (refused) i id, "
+                "których nie ma w bazie (unknown)."
             ),
             "parameters": {
                 "type": "object",
@@ -194,6 +204,14 @@ DB_TOOLS: list[dict[str, Any]] = [
                                     "description": (
                                         "Co pasuje i czego brakuje, jedno lub "
                                         "dwa zdania."
+                                    ),
+                                },
+                                "ocena": {
+                                    "type": "string",
+                                    "enum": list(VERDICTS),
+                                    "description": (
+                                        "polecam (domyślnie) albo uwaga, gdy "
+                                        "oferta pasuje słabo."
                                     ),
                                 },
                             },
@@ -228,29 +246,41 @@ SYSTEM_PROMPT = (
 # makes the choice itself, so it must not stop after the first ranking.
 DB_SYSTEM_PROMPT = (
     "Jesteś asystentem, który pomaga znaleźć pracę. Masz dostęp do całej bazy "
-    "ofert i sam wybierasz oferty najlepiej pasujące do profilu użytkownika.\n"
+    "ofert. Aplikacja pokazuje użytkownikowi ranking ofert policzony w kodzie; "
+    "Twoim zadaniem jest go uzupełnić: ocenić oferty z rankingu i dodać "
+    "dobre oferty, których ranking nie znalazł. Nie usuwasz ofert z rankingu.\n"
     "Pracuj w krokach:\n"
-    "1. szukaj_ofert: ranking dla całego profilu, punkt wyjścia.\n"
-    "2. przeszukaj_oferty, 2-3 razy: własne zapytania z innymi nazwami "
+    "1. szukaj_ofert z limitem 30: ranking dla całego profilu.\n"
+    "2. przeszukaj_oferty, 2-4 razy: własne zapytania z innymi nazwami "
     "stanowisk, pokrewnymi rolami i najważniejszymi umiejętnościami z profilu; "
     "dodaj filtry zgodne z preferencjami (miasto, praca zdalna, poziom).\n"
-    "3. porownaj_z_profilem albo pokaz_oferte dla 1-3 ofert, co do których "
-    "masz wątpliwości. Nie oceniaj oferty tylko po tytule.\n"
-    "4. wybierz_oferty: oferty, które naprawdę polecasz, od najlepszej, "
-    "najwyżej tyle, ile prosi użytkownik (jeśli dobrych jest mniej, wybierz "
-    "mniej). W powodzie napisz, co pasuje i czego brakuje.\n"
-    "5. Krótkie podsumowanie wyboru, bez wypisywania wszystkich ofert, bo "
-    "tabela je pokazuje.\n"
-    "Nie kończ przed wywołaniem wybierz_oferty. Masz najwyżej 12 kroków. "
-    "Używaj tylko id z wyników narzędzi; nie wymyślaj ofert, firm ani linków. "
-    "Do listy wybranych (dodaj_do_listy) dodawaj tylko na prośbę użytkownika. "
-    "Usunięcie z listy wymaga zgody użytkownika: jeśli usun_z_listy zwróci "
-    "confirmation_required, napisz, że oferta nie została usunięta."
+    "3. porownaj_z_profilem albo pokaz_oferte dla ofert, co do których masz "
+    "wątpliwości. Nie oceniaj oferty tylko po tytule.\n"
+    "4. wybierz_oferty: dla ofert z rankingu, o które prosi użytkownik, "
+    "podaj ocenę (polecam albo uwaga) i powód: co pasuje i czego brakuje. "
+    "Dodaj też najlepsze oferty znalezione przez przeszukaj_oferty, których "
+    "nie ma w rankingu, najwyżej tyle, ile prosi użytkownik.\n"
+    "Poziom użytkownika to twardy wymóg: nie dodawaj ofert z conflicts "
+    "„poziom: …” albo „wymaga N+ lat doświadczenia” ani takich, których "
+    "wymagania wyraźnie są dla seniora; wybierz_oferty i tak je odrzuci. "
+    "Oferty z rankingu, które słabo pasują, oznacz jako uwaga i napisz "
+    "dlaczego.\n"
+    "5. Krótkie podsumowanie, bez wypisywania wszystkich ofert, bo tabela je "
+    "pokazuje.\n"
+    "Niezależne wywołania narzędzi (np. kilka porownaj_z_profilem albo kilka "
+    "przeszukaj_oferty) możesz zlecić razem w jednym kroku. "
+    f"Nie kończ przed wywołaniem wybierz_oferty. Masz najwyżej {MAX_STEPS} "
+    "kroków. Używaj tylko id z wyników narzędzi; nie wymyślaj ofert, firm ani "
+    "linków. Do listy wybranych (dodaj_do_listy) dodawaj tylko na prośbę "
+    "użytkownika. Usunięcie z listy wymaga zgody użytkownika: jeśli "
+    "usun_z_listy zwróci confirmation_required, napisz, że oferta nie została "
+    "usunięta."
 )
 # Sent once by the app when the model wants to finish without a choice.
 PICK_REMINDER = (
-    "Nie zapisałeś jeszcze wyboru. Wywołaj teraz wybierz_oferty z ofertami, "
-    "które polecasz (z powodem przy każdej), a potem krótko podsumuj."
+    "Nie zapisałeś jeszcze oceny. Wywołaj teraz wybierz_oferty z ocenami ofert "
+    "z rankingu i ofertami, które dodajesz (z powodem przy każdej), a potem "
+    "krótko podsumuj."
 )
 
 
@@ -291,7 +321,12 @@ def _status(status: str, **payload: Any) -> str:
     return json.dumps({"status": status, **payload}, ensure_ascii=False)
 
 
-def _browse(arguments: dict[str, Any], offers: list[Offer], db: OfferDB) -> str:
+def _browse(
+    arguments: dict[str, Any],
+    profile: Profile | None,
+    offers: list[Offer],
+    db: OfferDB,
+) -> str:
     query = arguments.get("zapytanie")
     limit = arguments.get("limit", 10)
     city = arguments.get("miasto")
@@ -316,6 +351,7 @@ def _browse(arguments: dict[str, Any], offers: list[Offer], db: OfferDB) -> str:
             level=arguments.get("poziom"),
             employment_type=arguments.get("forma_zatrudnienia"),
             exclude={offer.id for offer in offers} if skip_seen else None,
+            profile=profile,
         )
     except ValueError as error:
         return _error(str(error))
@@ -326,29 +362,51 @@ def _browse(arguments: dict[str, Any], offers: list[Offer], db: OfferDB) -> str:
 
 def _pick(
     arguments: dict[str, Any],
+    profile: Profile | None,
     offers: list[Offer],
     db: OfferDB,
     picks: list[dict[str, str]] | None,
 ) -> str:
+    """Save the model's verdicts and added offers. Offers above the user's
+    level (by title or the years they ask for) are refused, so the table never
+    adds them."""
     items = arguments.get("oferty")
     if not isinstance(items, list) or len(items) > MAX_PICKS:
         return _error(f"oferty musi być listą do {MAX_PICKS} pozycji.")
     chosen: list[dict[str, str]] = []
     unknown: list[str] = []
+    refused: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
             return _error("Każda pozycja to obiekt z offer_id i powod.")
         offer_id, reason = item.get("offer_id"), item.get("powod")
+        verdict = item.get("ocena", "polecam")
         if not isinstance(offer_id, str) or not isinstance(reason, str):
             return _error("offer_id i powod muszą być tekstem.")
+        if verdict not in VERDICTS:
+            return _error("ocena to polecam albo uwaga.")
+        problems = db.level_problems(profile, offer_id) if profile else []
         if db.get(offer_id) is None:
             unknown.append(offer_id)
+        elif problems:
+            refused.append({"offer_id": offer_id, "reasons": problems})
         elif all(pick["offer_id"] != offer_id for pick in chosen):
-            chosen.append({"offer_id": offer_id, "reason": reason[:MAX_REASON_CHARS]})
+            chosen.append(
+                {
+                    "offer_id": offer_id,
+                    "reason": reason[:MAX_REASON_CHARS],
+                    "verdict": verdict,
+                }
+            )
             _remember(offers, db, offer_id)
     if picks is not None:
         picks[:] = chosen
-    return _status("ok", chosen=[pick["offer_id"] for pick in chosen], unknown=unknown)
+    return _status(
+        "ok",
+        chosen=[pick["offer_id"] for pick in chosen],
+        unknown=unknown,
+        refused=refused,
+    )
 
 
 def _run_db_tool(
@@ -360,9 +418,9 @@ def _run_db_tool(
     picks: list[dict[str, str]] | None,
 ) -> str:
     if name == "przeszukaj_oferty":
-        return _browse(arguments, offers, db)
+        return _browse(arguments, profile, offers, db)
     if name == "wybierz_oferty":
-        return _pick(arguments, offers, db, picks)
+        return _pick(arguments, profile, offers, db, picks)
 
     offer_id = arguments.get("offer_id")
     if not isinstance(offer_id, str) or not offer_id:
@@ -451,7 +509,7 @@ def run_agent(
     profile,
     offers,
     trace_path: Path,
-    max_steps: int = 12,
+    max_steps: int = MAX_STEPS,
     shortlist_path: Path = Path("data/shortlist.json"),
     confirm: Callable[[str], bool] = _deny,
     max_cost_usd: float = MAX_RUN_COST_USD,
@@ -465,7 +523,8 @@ def run_agent(
 
     With `db` the model also gets the tools that browse the offer database.
     With `picks` as well, a model that wants to finish before wybierz_oferty is
-    reminded once (the reminder costs one of the `max_steps`).
+    reminded once (the reminder costs one of the `max_steps`). All tool calls of
+    one reply run in that step, in order.
     """
     active_tools = tools_for(db) if tools is None else tools
     remind = db is not None and picks is not None and tools is None
@@ -511,8 +570,8 @@ def run_agent(
                 continue
             return reply["text"]
 
-        call = reply["tool_calls"][0]
-        picked = picked or call["name"] == "wybierz_oferty"
+        calls = reply["tool_calls"]
+        picked = picked or any(call["name"] == "wybierz_oferty" for call in calls)
         messages.append(
             {
                 "role": "assistant",
@@ -526,28 +585,32 @@ def run_agent(
                             "arguments": call["arguments"],
                         },
                     }
+                    for call in calls
                 ],
             }
         )
 
-        if dispatch is None:
-            result = run_tool(
-                call,
-                profile,
-                offers,
-                shortlist_path,
-                confirm,
-                search=search,
-                db=db,
-                picks=picks,
+        for call in calls:
+            if dispatch is None:
+                result = run_tool(
+                    call,
+                    profile,
+                    offers,
+                    shortlist_path,
+                    confirm,
+                    search=search,
+                    db=db,
+                    picks=picks,
+                )
+            else:
+                result = dispatch(call)
+            append_trace(
+                trace_path,
+                "tool_result",
+                {"step": step, "tool": call["name"], "result": result},
             )
-        else:
-            result = dispatch(call)
-        append_trace(
-            trace_path,
-            "tool_result",
-            {"step": step, "tool": call["name"], "result": result},
-        )
-        messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+            messages.append(
+                {"role": "tool", "tool_call_id": call["id"], "content": result}
+            )
 
     raise RuntimeError("Osiągnięto limit kroków")

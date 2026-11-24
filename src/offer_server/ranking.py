@@ -39,6 +39,19 @@ LEVEL_WORDS = {
 }
 # Rough working time, used only to compare pay given in different units.
 MONTHLY_FACTOR = {"HOUR": 168, "DAY": 21, "MONTH": 1, "YEAR": 1 / 12}
+# Most titles name no level, but the text often asks for years of experience
+# ("3+ years of experience", "minimum 2-3 lata doświadczenia"). The number found
+# is the lower bound of a range; a match counts only near a word about
+# experience, so "firma od 20 lat na rynku" is ignored.
+YEARS_PATTERN = re.compile(
+    r"(?<![\d.,])(\d{1,2})\s*(?:\+|(?:-|–|—|to|do)\s*\d{1,2})?\s*\+?\s*"
+    r"(?:years?|yrs|lata|lat|rok|roku)\b"
+)
+EXPERIENCE_WORDS = re.compile(r"experien|doswiadcz|stazu pracy")
+EXPERIENCE_CONTEXT_CHARS = 80
+MAX_PLAUSIBLE_YEARS = 15
+# The most years an offer may ask for at each level the user names.
+LEVEL_MAX_YEARS = {"intern": 0, "junior": 2, "mid": 5, "senior": 99, "lead": 99}
 
 Seniority = Literal["intern", "junior", "mid", "senior", "lead"]
 WorkMode = Literal["onsite", "hybrid", "remote"]
@@ -75,6 +88,8 @@ class SearchProfile(BaseModel):
     salary_expectation: Salary | None = None
     summary: str | None = Field(default=None, max_length=600)
     experience: list[Job] = Field(default_factory=list, max_length=30)
+    # Years of work from the profile's experience dates, if known.
+    years_experience: float | None = Field(default=None, ge=0, le=60)
 
 
 class Candidate(BaseModel):
@@ -162,12 +177,50 @@ def _pay_too_low(profile: SearchProfile, offer: OfferDoc) -> bool:
     return offer.salary_max * factor < wanted.min * MONTHLY_FACTOR[wanted.unit]
 
 
-def conflicts(profile: SearchProfile, offer: OfferDoc) -> list[str]:
-    """Reasons, in Polish, why the offer goes against what the user asked for."""
+def required_years(offer: OfferDoc) -> int | None:
+    """The years of experience the offer asks for, if its text says so.
+
+    With several numbers ("5+ years of Java, 2 years of Git") the largest
+    counts, since all of them are required.
+    """
+    text = plain(offer.requirements or offer.description)
+    found = []
+    for match in YEARS_PATTERN.finditer(text):
+        years = int(match.group(1))
+        start = max(0, match.start() - EXPERIENCE_CONTEXT_CHARS)
+        context = text[start : match.end() + EXPERIENCE_CONTEXT_CHARS]
+        if 0 < years <= MAX_PLAUSIBLE_YEARS and EXPERIENCE_WORDS.search(context):
+            found.append(years)
+    return max(found) if found else None
+
+
+def allowed_years(profile: SearchProfile) -> float | None:
+    """The most years of experience an offer may ask of this user: the cap of
+    the highest level they named, or their own years plus one if more."""
+    if not profile.seniority and profile.years_experience is None:
+        return None
+    cap = max((LEVEL_MAX_YEARS[level] for level in profile.seniority), default=0)
+    if profile.years_experience is not None:
+        cap = max(cap, profile.years_experience + 1)
+    return cap
+
+
+def level_conflicts(profile: SearchProfile, offer: OfferDoc) -> list[str]:
+    """The level named in the title or the years asked in the text do not fit."""
     found = []
     levels = offer_levels(offer.title)
     if profile.seniority and levels and not set(levels) & set(profile.seniority):
         found.append(f"poziom: {', '.join(levels)}")
+    years = required_years(offer)
+    allowed = allowed_years(profile)
+    if years is not None and allowed is not None and years > allowed:
+        found.append(f"wymaga {years}+ lat doświadczenia")
+    return found
+
+
+def conflicts(profile: SearchProfile, offer: OfferDoc) -> list[str]:
+    """Reasons, in Polish, why the offer goes against what the user asked for."""
+    found = level_conflicts(profile, offer)
     modes = profile.work_modes
     if modes == ["remote"] and not offer.remote:
         found.append("praca stacjonarna")
@@ -254,5 +307,15 @@ def search(
                 requirements=re.sub(r"\n{2,}", "\n", excerpt(offer)),
             )
         )
-    candidates.sort(key=lambda c: (c.score, len(c.matched_skills)), reverse=True)
+    # Offers at the user's level come first; one above it shows up only when
+    # there are not enough others.
+    above = {
+        c.id
+        for c in candidates
+        if any(r.startswith(("poziom:", "wymaga ")) for r in c.conflicts)
+    }
+    candidates.sort(
+        key=lambda c: (c.id not in above, c.score, len(c.matched_skills)),
+        reverse=True,
+    )
     return candidates[:limit]

@@ -13,7 +13,7 @@ from typing import Any, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from agent_project.agent import MAX_RUN_COST_USD, _error, run_agent
+from agent_project.agent import MAX_RUN_COST_USD, MAX_STEPS, _error, run_agent
 from agent_project.models import (
     EMAIL_PATTERN,
     MAX_SUMMARY_CHARS,
@@ -744,7 +744,7 @@ def run_profile_agent(
     draft_path: Path = DRAFT_PATH,
     profiles_dir: Path = PROFILES_DIR,
     confirm: Callable[[], bool] = _deny,
-    max_steps: int = 12,
+    max_steps: int = MAX_STEPS,
     max_cost_usd: float = MAX_RUN_COST_USD,
     search: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     extra_tools: list[dict[str, Any]] | None = None,

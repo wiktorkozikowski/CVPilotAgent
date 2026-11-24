@@ -27,11 +27,21 @@ Model nie dostaje gotowej listy. Ma narzędzia tylko do odczytu
 | `przeszukaj_oferty` | wyszukiwanie po znaczeniu zapytania, które model pisze sam, z filtrami: miasto, zdalnie, poziom, forma zatrudnienia; pomija oferty już widziane |
 | `pokaz_oferte` | jedna oferta w całości (wymagania, obowiązki, link, termin) |
 | `porownaj_z_profilem` | które umiejętności z profilu oferta wymienia, których nie, zgodność tytułu, niezgodności z preferencjami |
-| `wybierz_oferty` | wybór modelu z powodem przy każdej ofercie; to on trafia do tabeli |
+| `wybierz_oferty` | ocena modelu (polecam / uwaga, z powodem) ofert z rankingu i oferty, które dopisuje pod rankingiem; ranking zostaje w tabeli w całości |
+
+**Poziom to twardy wymóg.** Poziom oferty bierze się z tytułu („Senior”,
+„Junior”) i z liczby lat doświadczenia w wymaganiach („3+ years of
+experience”, „min. 4 lata doświadczenia”; liczy się największa, a tylko
+w pobliżu słowa o doświadczeniu, więc „na rynku od 20 lat” się nie liczy).
+Profil junior dopuszcza do 2 lat, mid do 5; gdy profil ma doświadczenie
+z datami, granicą jest też jego staż + 1 rok. Oferta powyżej granicy dostaje
+niezgodność „wymaga N+ lat doświadczenia”, w rankingu trafia na koniec,
+`przeszukaj_oferty` jej nie pokazuje, a `wybierz_oferty` ją odrzuca.
 
 Każde narzędzie sprawdza argumenty w kodzie. Model nie pisze zapytań do bazy
 (np. SQL), nie widzi danych kontaktowych z profilu i niczego w bazie nie
-zmienia. Przebieg ma limit 12 kroków i 0,10 USD (limity kursu), więc model nie sprawdza
+zmienia. Przebieg ma limit 24 kroków i 0,10 USD, a niezależne narzędzia
+z jednej odpowiedzi wykonują się w jednym kroku; model i tak nie sprawdza
 każdej oferty osobno.
 
 ## Pierwsze uruchomienie

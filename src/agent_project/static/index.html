@@ -57,6 +57,9 @@
     .app-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .app-head h1 { margin-right: auto; }
     .reason { display: block; margin-top: 4px; color: var(--muted); font-size: .9em; }
+    .reason.warn { color: #b45309; }
+    .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px;
+      font-size: .75em; color: var(--accent-text); background: var(--accent); }
     .panel-head { display: flex; justify-content: space-between; align-items: center;
       gap: 8px; margin-bottom: 8px; }
     .panel-head h2 { margin: 0; }
@@ -1167,11 +1170,19 @@
           } else {
             td.textContent = text;
           }
+          if (i === 0 && m.source === "agent") {
+            // Not in the code ranking: the agent found it by its own query.
+            const badge = document.createElement("span");
+            badge.className = "badge";
+            badge.textContent = "znalezione przez agenta";
+            td.appendChild(badge);
+          }
           if (i === 0 && m.reason) {
-            // Why the agent picked this offer.
+            // The agent's verdict on this offer.
             const why = document.createElement("span");
-            why.className = "reason";
-            why.textContent = m.reason;
+            const warn = m.verdict === "uwaga";
+            why.className = warn ? "reason warn" : "reason";
+            why.textContent = (warn ? "⚠ " : "") + m.reason;
             td.appendChild(why);
           }
           tr.appendChild(td);
@@ -1203,8 +1214,10 @@
       $("chat-matches").replaceChildren(
         ...matchRows(matches, search.profile_id, $("chat-results-msg")),
       );
+      const added = matches.filter((m) => m.source === "agent").length;
+      const warned = matches.filter((m) => m.verdict === "uwaga").length;
       const found = run && run.picked
-        ? `Agent przejrzał bazę i wybrał ofert: ${matches.length}.`
+        ? `Ranking: ${matches.length - added} ofert, agent dodał: ${added}, z uwagami: ${warned}.`
         : `Znaleziono ofert: ${matches.length}.`;
       setMsg($("chat-results-msg"),
         matches.length ? found : "Nie znaleziono ofert.",

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -177,7 +178,13 @@ def test_agent_browses_compares_and_picks(offer_db, tmp_path) -> None:
     )
 
     assert answer == "Polecam raportowanie w Krakowie."
-    assert picks == [{"offer_id": "justjoin:bi-krakow", "reason": "SQL i Power BI."}]
+    assert picks == [
+        {
+            "offer_id": "justjoin:bi-krakow",
+            "reason": "SQL i Power BI.",
+            "verdict": "polecam",
+        }
+    ]
     results = [
         json.loads(line)["payload"]
         for line in trace.read_text("utf-8").splitlines()
@@ -218,3 +225,88 @@ def test_model_that_skips_the_choice_is_reminded_once(offer_db, tmp_path) -> Non
     assert answer == "Wybrałem jedną."
     assert [pick["offer_id"] for pick in picks] == ["justjoin:bi-krakow"]
     assert sum(m["content"] == PICK_REMINDER for m in messages) == 1
+
+
+def test_years_asked_in_the_text_count_as_a_level_conflict() -> None:
+    from conftest import make_offer_db, raw_offer
+
+    db = make_offer_db(
+        [
+            raw_offer(
+                "python-exp",
+                title="Python Developer",
+                description="Wymagania\nPython, SQL\nMin. 4 lata doświadczenia",
+            ),
+            raw_offer(
+                "python-junior",
+                title="Python Developer",
+                company="Inna",
+                description="Requirements\nPython, SQL, 1+ year of experience",
+            ),
+            raw_offer(
+                "old-firm",
+                title="Python Developer",
+                company="Stara",
+                description="Wymagania\nPython\nJesteśmy na rynku od 20 lat",
+            ),
+        ]
+    )
+    junior = Profile.model_validate(
+        {
+            **PROFILE.model_dump(),
+            "target_roles": ["Python Developer"],
+            "skills": ["Python", "SQL"],
+            "seniority": ["junior"],
+        }
+    )
+
+    assert db.get("justjoin:python-exp") is not None
+    assert db.level_problems(junior, "justjoin:python-exp") == [
+        "wymaga 4+ lat doświadczenia"
+    ]
+    assert db.level_problems(junior, "justjoin:python-junior") == []
+    assert db.level_problems(junior, "justjoin:old-firm") == []
+
+    # The browse tool hides it, the ranking puts it last, the choice refuses it.
+    found = {item["id"] for item in db.browse("Python", profile=junior)}
+    assert "justjoin:python-exp" not in found
+    ranked = [m.offer.id for m in db.match_profile(junior, 3)]
+    assert ranked[-1] == "justjoin:python-exp"
+    picks = []
+    result = json.loads(
+        run_tool(
+            _call(
+                "wybierz_oferty",
+                {
+                    "oferty": [
+                        {"offer_id": "justjoin:python-exp", "powod": "?"},
+                        {"offer_id": "justjoin:python-junior", "powod": "Python."},
+                    ]
+                },
+            ),
+            junior,
+            [],
+            Path("unused.json"),
+            db=db,
+            picks=picks,
+        )
+    )
+    assert result["chosen"] == ["justjoin:python-junior"]
+    assert result["refused"][0]["offer_id"] == "justjoin:python-exp"
+
+
+def test_years_of_experience_come_from_job_dates() -> None:
+    from datetime import date
+
+    from agent_project.offer_db import years_of_experience
+
+    profile = Profile.model_validate(
+        {
+            **PROFILE.model_dump(),
+            "experience": [
+                {"company": "A", "position": "IT", "start": "2024-01", "end": "obecnie"}
+            ],
+        }
+    )
+    assert years_of_experience(profile, date(2026, 11, 1)) == 2.8
+    assert years_of_experience(PROFILE) is None

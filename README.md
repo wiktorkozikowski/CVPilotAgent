@@ -39,12 +39,13 @@ Meeting 1.
   profil nie trafia do repozytorium.
 - **Tools:** do odczytu bazy ofert `szukaj_ofert` (ranking dla profilu),
   `przeszukaj_oferty` (własne zapytanie i filtry), `pokaz_oferte`,
-  `porownaj_z_profilem` i `wybierz_oferty` (wybór agenta z powodami);
+  `porownaj_z_profilem` i `wybierz_oferty` (oceny agenta i dodane przez
+  niego oferty, z powodami);
   `dodaj_do_listy` (odwracalny zapis) i `usun_z_listy` (wymaga potwierdzenia
   użytkownika w aplikacji). `szukaj_ofert` i `dodaj_do_listy` są też w serwerze
   MCP, usuwanie nie. Każde narzędzie waliduje argumenty w kodzie.
 - **Status:** zrealizowane wyszukiwanie, lista wybranych, pętla z limitem kroków
-  (12) i kosztu (0,10 USD na uruchomienie), interfejs w przeglądarce
+  (24) i kosztu (0,10 USD na uruchomienie), interfejs w przeglądarce
   (`agent_project.web`) z logowaniem na jedno konto i przebiegiem agenta pod
   wynikami. Cały projekt działa jako jedna aplikacja na serwerze, a agent sam
   przegląda wektorową bazę prawdziwych ofert. Dalej: generowanie CV i wysyłka,
@@ -129,9 +130,13 @@ przeglądarka ──HTTPS──► Caddy ──► agent_project.web (127.0.0.1:
 offer-update.timer (co godzinę) ──► offer_server.update ──► var/store, var/index
 ```
 
-Agent sam przegląda bazę: zaczyna od rankingu dla profilu, potem szuka
-własnymi zapytaniami z filtrami, sprawdza obiecujące oferty i na końcu
-wybiera te, które poleca, z powodem przy każdej. Ten wybór pokazuje tabela.
+Wyszukiwanie łączy ranking z kodu z oceną modelu. Kod liczy ranking dla
+całego profilu i tabela zawsze pokazuje jego czołówkę w całości. Agent
+przegląda 3× większą pulę z rankingu, szuka własnymi zapytaniami z filtrami
+i sprawdza wątpliwe oferty. Na końcu (`wybierz_oferty`) daje ofertom
+z rankingu ocenę „polecam” albo „uwaga” z powodem i dopisuje pod rankingiem
+dobre oferty, których ranking nie znalazł. Agent nie może usunąć oferty
+z rankingu, więc wynik nie jest gorszy niż sam ranking.
 Szczegóły bazy, wektoryzacji i aktualizacji: [docs/baza-ofert.md](docs/baza-ofert.md).
 
 **Konto.** Jest jedno i nie da się zarejestrować przez stronę. Zakłada się je
@@ -187,15 +192,18 @@ Interfejs:
   o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
   profil”; sam model nie może go zapisać. W rozmowie model może też przeglądać
   bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
-- **Szukaj ofert.** Agent przegląda bazę i wybiera oferty. Tabela po prawej
-  pokazuje jego wybór z powodem przy każdej ofercie, a pod nią przebieg
-  każdego kroku i ścieżkę do śladu w `traces/`.
+- **Szukaj ofert.** Tabela po prawej pokazuje ranking z kodu z oceną agenta
+  przy ofertach („⚠” przy słabszych) i pod nim oferty oznaczone „znalezione
+  przez agenta”, a pod tabelą przebieg każdego kroku i ścieżkę do śladu
+  w `traces/`.
 - **Lista wybranych.** Każdy profil ma własną listę
   (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
   w oknie przeglądarki.
 
-Ograniczenia każdego uruchomienia: najwyżej 12 kroków modelu i 0,10 USD
-(`MAX_RUN_COST_USD` w `agent.py`).
+Ograniczenia każdego uruchomienia: najwyżej 24 kroki modelu (`MAX_STEPS`)
+i 0,10 USD (`MAX_RUN_COST_USD`, oba w `agent.py`). Kilka niezależnych narzędzi,
+o które model prosi w jednej odpowiedzi, wykonuje się w jednym kroku. Uwaga:
+24 kroki to więcej niż limit kursu (12).
 
 Testy (`uv run pytest`) nie łączą się z modelem i nie pobierają modelu do
 wektoryzacji: indeks budują z `HashingEmbedder`, a aplikację uruchamiają bez

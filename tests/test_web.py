@@ -595,7 +595,8 @@ def test_search_in_offer_db_and_shortlist_its_offer(start_server) -> None:
     assert status == 200
     assert [m["id"] for m in data["matches"]] == ["justjoin:remote-analyst"]
     assert data["matches"][0]["requirements"] == "SQL, Excel"
-    assert fake.limits == [10]  # the table and the agent's tool share one search
+    # The table and the agent's tool share one search; the agent sees 3x more.
+    assert fake.limits == [30]
     tool_step = [s for s in data["steps"] if s["kind"] == "wynik"][0]
     assert "justjoin:remote-analyst" in tool_step["result"]
 
@@ -615,33 +616,45 @@ def test_search_in_offer_db_and_shortlist_its_offer(start_server) -> None:
     ]
 
 
-def test_search_shows_the_offers_the_agent_picked(start_server) -> None:
+def test_search_keeps_the_ranking_and_adds_the_agents_offers(start_server) -> None:
     db = make_offer_db()
     base, _ = start_server(
         [
-            _reply(name="szukaj_ofert", arguments={"limit": 5}),
+            _reply(name="szukaj_ofert", arguments={"limit": 30}),
             _reply(name="przeszukaj_oferty", arguments={"zapytanie": "Power BI"}),
             _reply(
                 name="wybierz_oferty",
                 arguments={
                     "oferty": [
+                        {
+                            "offer_id": "justjoin:remote-analyst",
+                            "powod": "Mało Power BI.",
+                            "ocena": "uwaga",
+                        },
                         {"offer_id": "justjoin:bi-krakow", "powod": "Power BI."},
                     ]
                 },
             ),
-            _reply("Polecam jedną ofertę."),
+            _reply("Dodałem jedną ofertę."),
         ],
         offer_db=db,
     )
 
     status, data = _request(
-        base + "/api/search", "POST", {"profile_id": "jan", "limit": 5}
+        base + "/api/search", "POST", {"profile_id": "jan", "limit": 2}
     )
 
     assert status == 200
     assert data["picked"] is True
-    assert [(m["id"], m["reason"]) for m in data["matches"]] == [
-        ("justjoin:bi-krakow", "Power BI.")
+    # The top 2 of the ranking stay, in order, even the one without a verdict;
+    # the agent's offer from outside them comes below.
+    assert [
+        (m["id"], m["source"], m.get("verdict"), m.get("reason"))
+        for m in data["matches"]
+    ] == [
+        ("justjoin:remote-analyst", "ranking", "uwaga", "Mało Power BI."),
+        ("justjoin:java", "ranking", None, None),
+        ("justjoin:bi-krakow", "agent", "polecam", "Power BI."),
     ]
     status, data = _request(
         base + "/api/shortlist/add",
