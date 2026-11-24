@@ -752,8 +752,8 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
             self, profile_id: str, profile: Profile, limit: int, trace_path: Path
         ) -> None:
             """The ranking picks CANDIDATE_POOL offers, the model rates each one
-            against the profile (agent_project.judge) and only offers rated
-            MIN_FIT or more are shown: maybe fewer than `limit`, or none."""
+            against the profile (agent_project.judge) and the `limit` best are
+            shown, with a score from 0 to 1."""
             try:
                 matches = config.offer_db.match_profile(profile, CANDIDATE_POOL)
             except ValueError as error:
@@ -790,7 +790,7 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 {
                     "profile": {"id": profile_id, **profile.model_dump()},
                     "answer": summary(matches, rated, len(rows)),
-                    # True: the model chose (rows may be empty: no good matches).
+                    # True: the model rated the candidates.
                     "picked": True,
                     "candidates": len(matches),
                     "matches": rows,

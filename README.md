@@ -78,13 +78,14 @@ offer-update.timer (co godzinę) ──► offer_server.update ──► var/sto
    kandydata osobno w skali 0–10, po 8 ofert w jednym wywołaniu, na pełnych
    wymaganiach oferty (do 1200 znaków), poziomie z ogłoszenia i wymaganych
    latach doświadczenia. Skala jest stała: 7–8 to „stanowisko pasuje, ma
-   większość kluczowych wymagań”, 9–10 „prawie wszystkie”, poniżej 7 oferta
-   nie jest pokazywana. Oferty, których model nie ocenił, dostają drugą
-   szansę w kolejnym wywołaniu.
+   większość kluczowych wymagań”, 9–10 „prawie wszystkie”, 0–3 „inny zawód
+   albo brakuje większości wymagań”. Oferty, których model nie ocenił,
+   dostają drugą szansę w kolejnym wywołaniu.
 
-Tabela pokazuje tylko oferty z oceną co najmniej 7/10, od najlepszej,
-najwyżej tyle, ile chcesz, z powodem przy każdej. Jeśli dobrych jest mniej,
-pokazuje mniej; jeśli nie ma żadnej, pisze, ile miała najlepsza i dlaczego.
+Tabela pokazuje dokładnie tyle najlepszych ofert, ile chcesz (np. top 10),
+od najlepszej, z powodem przy każdej. Wynik ma zakres od 0 do 1 z dwoma
+miejscami po przecinku: w 80% to ocena modelu (np. 8/10 daje 0,64), w 20%
+wynik rankingu, który rozstrzyga też kolejność ofert o tej samej ocenie.
 Mały model wybierający z długiej listy ocenia głównie po tytułach; ocena
 każdej oferty osobno, w małych porcjach, jest dużo trafniejsza. Rozmowa
 o profilu dalej korzysta z narzędzi agenta (`przeszukaj_oferty`,
@@ -97,10 +98,10 @@ i aktualizacji ofert: [docs/baza-ofert.md](docs/baza-ofert.md).
   o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
   profil”; sam model nie może go zapisać. W rozmowie model może też
   przeglądać bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
-- **Szukaj ofert.** Tabela pokazuje oferty z oceną modelu (kolumna „Wynik”,
-  0–10) i powodem przy każdej. Nad tabelą jest liczba ocenionych kandydatów
-  albo informacja, że dobrych dopasowań nie ma. Pod tabelą jest przebieg
-  każdego wywołania modelu i ścieżka do śladu w `traces/`.
+- **Szukaj ofert.** Tabela pokazuje wybraną liczbę najlepszych ofert
+  z wynikiem od 0 do 1 (kolumna „Wynik”) i powodem przy każdej. Nad tabelą
+  jest liczba ocenionych kandydatów. Pod tabelą jest przebieg każdego
+  wywołania modelu i ścieżka do śladu w `traces/`.
 - **Lista wybranych.** Każdy profil ma własną listę
   (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
   w oknie przeglądarki.

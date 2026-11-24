@@ -626,7 +626,7 @@ def test_search_in_offer_db_and_shortlist_its_offer(start_server) -> None:
     ]
 
 
-def test_search_shows_only_offers_rated_high_enough(start_server) -> None:
+def test_search_shows_exactly_the_top_rated_offers(start_server) -> None:
     # The ranking for jan: remote-analyst, java, bi-krakow, warehouse (o1-o4).
     base, _ = start_server(
         [
@@ -641,20 +641,22 @@ def test_search_shows_only_offers_rated_high_enough(start_server) -> None:
     )
 
     status, data = _request(
-        base + "/api/search", "POST", {"profile_id": "jan", "limit": 5}
+        base + "/api/search", "POST", {"profile_id": "jan", "limit": 2}
     )
 
     assert status == 200
-    assert data["picked"] is True
     assert data["candidates"] == 4
-    # Best rating first; offers rated below 7 are not shown.
+    # Exactly the 2 asked for, best first, whatever their rating.
     assert [(m["id"], m["fit"]) for m in data["matches"]] == [
         ("justjoin:bi-krakow", 9),
         ("justjoin:remote-analyst", 7),
     ]
+    for match in data["matches"]:
+        assert 0 <= match["score"] <= 1
+        assert match["score"] == round(match["score"], 2)
 
 
-def test_search_with_no_good_match_says_why(start_server) -> None:
+def test_search_shows_weak_offers_too_when_asked_for_more(start_server) -> None:
     base, _ = start_server(
         [
             _rate(
@@ -667,15 +669,17 @@ def test_search_with_no_good_match_says_why(start_server) -> None:
         offer_db=make_offer_db(),
     )
 
-    status, data = _request(base + "/api/search", "POST", {"profile_id": "jan"})
+    status, data = _request(
+        base + "/api/search", "POST", {"profile_id": "jan", "limit": 4}
+    )
 
     assert status == 200
-    assert data["matches"] == []
-    assert "Najlepsza miała 6/10: Brakuje Power BI." in data["answer"]
+    assert [m["fit"] for m in data["matches"]] == [6, 5, 2, 0]
+    assert data["answer"].startswith("Oceniłem 4 z 4 kandydatów")
 
 
 def test_offers_left_out_of_the_answer_are_asked_about_again(start_server) -> None:
-    base, tmp_path = start_server(
+    base, _ = start_server(
         [
             _rate(("o1", 8, "SQL."), ("o2", 1, "Java.")),
             # Asked again about bi-krakow and warehouse, now o1 and o2.
@@ -686,7 +690,9 @@ def test_offers_left_out_of_the_answer_are_asked_about_again(start_server) -> No
 
     status, data = _request(base + "/api/search", "POST", {"profile_id": "jan"})
 
-    assert [m["id"] for m in data["matches"]] == [
-        "justjoin:bi-krakow",
-        "justjoin:remote-analyst",
-    ]
+    assert {m["id"]: m["fit"] for m in data["matches"]} == {
+        "justjoin:remote-analyst": 8,
+        "justjoin:java": 1,
+        "justjoin:bi-krakow": 9,
+        "justjoin:warehouse": 0,
+    }

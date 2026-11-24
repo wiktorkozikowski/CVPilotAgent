@@ -2,7 +2,12 @@ import json
 
 from conftest import make_offer_db, raw_offer
 
-from agent_project.judge import BATCH_SIZE, profile_for_model, rate_offers
+from agent_project.judge import (
+    BATCH_SIZE,
+    final_score,
+    profile_for_model,
+    rate_offers,
+)
 from agent_project.models import Profile
 
 PROFILE = Profile.model_validate(
@@ -72,3 +77,11 @@ def test_profile_for_model_names_the_level_and_skills() -> None:
     assert "Poziom: junior" in text
     assert "Szukane stanowiska: Data Analyst" in text
     assert "Anna" not in text
+
+
+def test_final_score_is_between_0_and_1_with_two_decimals() -> None:
+    assert final_score(10, 1.0) == 1.0
+    assert final_score(0, 0.0) == 0.0
+    assert final_score(7, 0.56) == 0.67  # 0.8 * 0.7 + 0.2 * 0.56
+    # The same rating: the better ranked offer scores higher.
+    assert final_score(8, 0.6) > final_score(8, 0.3)

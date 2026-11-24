@@ -279,7 +279,7 @@
           <th>Firma</th>
           <th title="Umiejętności z profilu, które występują w ofercie">Pasuje</th>
           <th title="Co w ofercie nie zgadza się z preferencjami: poziom, tryb pracy, forma zatrudnienia, wynagrodzenie">Uwagi</th>
-          <th title="Ocena modelu od 0 do 10 (wyszukiwanie w bazie) albo wynik rankingu od 0 do 1">Wynik</th>
+          <th title="Dopasowanie od 0 do 1: w 80% ocena modelu, w 20% wynik rankingu">Wynik</th>
           <th></th>
         </tr></thead>
         <tbody id="chat-matches"></tbody>
@@ -1155,8 +1155,8 @@
           m.company,
           m.matched_skills.join(", "),
           (m.conflicts || []).join("; ") || "—",
-          // The model's rating when it rated the offer, else the ranking score.
-          m.fit != null ? `${m.fit}/10` : String(m.score),
+          // From 0 to 1, always with two decimals (0.80, not 0.8).
+          Number(m.score).toFixed(2),
         ];
         cells.forEach((text, i) => {
           const td = document.createElement("td");

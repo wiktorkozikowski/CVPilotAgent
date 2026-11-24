@@ -3,7 +3,7 @@
 A small model picking from a long list ranks by titles. Here it sees at most
 BATCH_SIZE offers per call, each with its requirements in full, and rates every
 one from 0 to 10 by a fixed scale. The ranking (offer_server.ranking) chooses
-the candidates; this decides which of them really fit.
+the candidates; this orders them by how well they really fit.
 """
 
 import json
@@ -19,8 +19,8 @@ from offer_server.ranking import required_years
 BATCH_SIZE = 8
 # The most of an offer's requirements the model reads.
 REQUIREMENTS_CHARS = 1200
-# Offers rated at least this are shown.
-MIN_FIT = 7
+# Share of the model's rating in the score shown; the rest is the ranking's.
+FIT_WEIGHT = 0.8
 MAX_REASON_CHARS = 300
 
 RATE_TOOL: dict[str, Any] = {
@@ -224,32 +224,35 @@ def rate_offers(
     return rated
 
 
+def final_score(fit: int, ranking_score: float) -> float:
+    """The score shown, from 0 to 1 with two decimals: mostly the model's
+    rating, plus a little of the ranking's score, which also orders offers
+    the model rated the same."""
+    value = FIT_WEIGHT * fit / 10 + (1 - FIT_WEIGHT) * max(0.0, ranking_score)
+    return round(min(1.0, value), 2)
+
+
 def best_fits(
     matches: list[OfferMatch], rated: dict[str, dict], limit: int
 ) -> list[tuple[OfferMatch, dict]]:
-    """Offers rated at least MIN_FIT, best rating first, then ranking order."""
-    order = {match.offer.id: position for position, match in enumerate(matches)}
-    good = [
-        (match, rated[match.offer.id])
+    """The `limit` best rated offers, highest score first. Each rating gets the
+    final `score` (0-1); offers the model did not rate are left out."""
+    best = [
+        (match, {**rated[match.offer.id]})
         for match in matches
-        if rated.get(match.offer.id, {}).get("fit", -1) >= MIN_FIT
+        if match.offer.id in rated
     ]
-    good.sort(key=lambda pair: (-pair[1]["fit"], order[pair[0].offer.id]))
-    return good[:limit]
+    for match, rating in best:
+        rating["score"] = final_score(rating["fit"], match.score)
+    best.sort(key=lambda pair: pair[1]["score"], reverse=True)
+    return best[:limit]
 
 
 def summary(matches: list[OfferMatch], rated: dict[str, dict], shown: int) -> str:
-    """A short answer for the user under the table."""
-    if shown:
-        return (
-            f"Oceniłem {len(rated)} z {len(matches)} kandydatów z rankingu. "
-            f"Pokazuję {shown} z oceną co najmniej {MIN_FIT}/10."
-        )
+    """A short answer for the user above the table."""
     if not rated:
         return "Nie udało się ocenić kandydatów. Spróbuj ponownie."
-    best = max(rated.values(), key=lambda item: item["fit"])
     return (
-        f"Nie znalazłem ofert z oceną co najmniej {MIN_FIT}/10 wśród "
-        f"{len(matches)} kandydatów. Najlepsza miała {best['fit']}/10: "
-        f"{best['reason']}"
+        f"Oceniłem {len(rated)} z {len(matches)} kandydatów z rankingu. "
+        f"Pokazuję {shown} najlepiej dopasowanych."
     )
