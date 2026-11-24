@@ -1,37 +1,26 @@
-# My Agent Project
+# CVPilotAgent
 
-Student project for **Designing LLM/VLM Agents**.
+Agent, który pomaga szukać pracy. Z rozmowy buduje profil kandydata,
+przegląda bazę prawdziwych ofert i pokazuje te najlepiej dopasowane, z oceną
+i powodem przy każdej. Projekt na kurs **Designing LLM/VLM Agents**.
 
-## Setup
-
-Create your own repository with **Use this template**, then clone your new
-repository:
-
-```bash
-git clone <your-repository-url>
-cd <your-repository-directory>
-uv sync --locked
-cp .env.example .env
-uv run pytest
-```
-
-Add the individual OpenRouter key supplied by the instructor to `.env`. Never
-commit this file or place the key in code, traces, issues, or reports.
-
-## Coding Agent
-
-If you already use Codex or Claude Code, nothing else is required. Otherwise,
-install [Antigravity CLI](https://antigravity.google/docs/cli/install/) before
-Meeting 1.
+- [Project Brief](#project-brief)
+- [Jak to działa](#jak-to-działa)
+- [Uruchomienie lokalne](#uruchomienie-lokalne)
+- [Serwer](#serwer)
+- [Konto i hasło](#konto-i-hasło)
+- [Testy i polecenia](#testy-i-polecenia)
+- [Zasady kursu](#zasady-kursu)
 
 ## Project Brief
 
 - **Project title:** CVPilotAgent, agent tworzący spersonalizowane CV
 - **Intended user:** osoba szukająca pracy, np. junior analityk lub developer
-- **Problem and primary task:** użytkownik wpisuje swoje umiejętności w pliku
-  JSON. Agent wyszukuje pasujące oferty pracy i wypisuje je posortowane wg
-  dopasowania. Kolejne etapy (w planie): generowanie CV dopasowanego do ofert
-  i wysłanie go po akceptacji użytkownika.
+- **Problem and primary task:** użytkownik opisuje swoje umiejętności
+  w rozmowie (profil zapisuje się jako JSON). Agent wyszukuje pasujące oferty
+  pracy i pokazuje je posortowane wg dopasowania. Kolejne etapy (w planie):
+  generowanie CV dopasowanego do ofert i wysłanie go po akceptacji
+  użytkownika.
 - **Why an agent is appropriate:** wybór następnego kroku zależy od wyników
   poprzednich, np. ile ofert znaleziono i których umiejętności brakuje.
 - **Planned data:** `data/profile.json` (profil użytkownika) i
@@ -40,19 +29,19 @@ Meeting 1.
 - **Tools:** do odczytu bazy ofert `szukaj_ofert` (ranking dla profilu),
   `przeszukaj_oferty` (własne zapytanie i filtry), `pokaz_oferte`,
   `porownaj_z_profilem` i `wybierz_oferty` (oceny agenta i dodane przez
-  niego oferty, z powodami);
-  `dodaj_do_listy` (odwracalny zapis) i `usun_z_listy` (wymaga potwierdzenia
-  użytkownika w aplikacji). `szukaj_ofert` i `dodaj_do_listy` są też w serwerze
-  MCP, usuwanie nie. Każde narzędzie waliduje argumenty w kodzie.
-- **Status:** zrealizowane wyszukiwanie, lista wybranych, pętla z limitem kroków
-  (24) i kosztu (0,10 USD na uruchomienie), interfejs w przeglądarce
+  niego oferty, z powodami); `dodaj_do_listy` (odwracalny zapis)
+  i `usun_z_listy` (wymaga potwierdzenia użytkownika w aplikacji).
+  `szukaj_ofert` i `dodaj_do_listy` są też w serwerze MCP, usuwanie nie.
+  Każde narzędzie waliduje argumenty w kodzie.
+- **Status:** zrealizowane wyszukiwanie, lista wybranych, pętla z limitem
+  kroków (24) i kosztu (0,10 USD na uruchomienie), interfejs w przeglądarce
   (`agent_project.web`) z logowaniem na jedno konto i przebiegiem agenta pod
-  wynikami. Cały projekt działa jako jedna aplikacja na serwerze, a agent sam
-  przegląda wektorową bazę prawdziwych ofert. Dalej: generowanie CV i wysyłka,
-  dopiero po zgodzie użytkownika.
+  wynikami. Cały projekt działa jako jedna aplikacja na serwerze, a agent
+  przegląda wektorową bazę prawdziwych ofert. Dalej: generowanie CV
+  i wysyłka, dopiero po zgodzie użytkownika.
 - **Evidence:** `evidence/live_*.jsonl` to przebiegi z prawdziwym modelem
-  (`uv run python -m agent_project.demo_runs`), `flow_trace.jsonl` i
-  `confirmation_trace.jsonl` to przebiegi z mockiem.
+  (`uv run python -m agent_project.demo_runs`), `flow_trace.jsonl`
+  i `confirmation_trace.jsonl` to przebiegi z mockiem.
 - **Planned visual input:** brak na tym etapie.
 - **Success criteria:** dla przykładowego profilu oferty są uporządkowane
   według dopasowania umiejętności, a oferty bez wspólnych umiejętności nie
@@ -61,67 +50,16 @@ Meeting 1.
   odpowiada na oferty bez zgody użytkownika. Nie scrapuje serwisów z ofertami
   bez zgody ich regulaminu. Nie zapisuje danych osobowych w śladach.
 
-Replace the empty fields above with your project definition and keep them
-current as the project develops.
+## Jak to działa
 
-## Starter Code
-
-The repository contains only:
-
-- `src/agent_project/llm.py` — an OpenRouter client and a mock client. A live
-  call returns the text, tool calls, finish reason, model, provider, latency,
-  and token usage with cost. Requests time out after 60 seconds and replies are
-  limited to 1,024 tokens. If a provider returns an empty reply instead of the
-  model's answer, the client retries once on another provider.
-  `image_part(path)` adds an image to a message;
-- `src/agent_project/tracing.py` — a JSON Lines trace helper;
-- `tests/test_setup.py` — setup checks;
-- `data/` — approved project data;
-- `traces/` — generated traces, ignored by Git; and
-- `evidence/` — the traces and results you submit.
-
-The agent loop, domain tools, state, retrieval, multimodal behavior, evaluation,
-and safety controls are intentionally left for you to design and implement.
-
-## Course Limits
-
-- One model for all live work: `google/gemma-4-26b-a4b-it`.
-- USD 2 per key for the whole course, enforced by OpenRouter.
-- In your own code: at most 12 model steps and USD 0.10 per agent run.
-
-## Working with the Course Model
-
-- The model usually requests one tool call per turn. Tell it in the system
-  prompt that independent calls may be requested together.
-- For typed output, such as a plan or facts read from an image, offer one tool
-  whose parameters are your Pydantic schema and validate its arguments. Keep
-  `tool_choice` at its default, `"auto"`, and give lists a maximum length;
-  free-form JSON output sometimes repeats itself until the token limit.
-- Results vary between identical runs. Run your fixed evaluation set at least
-  three times and report the worst run as well as the average.
-- A typical agent run costs well under USD 0.01. Use the mock client in tests.
-- Copy the traces you submit to `evidence/`. Check them first for keys,
-  personal data, and absolute file paths.
-
-## Commands
-
-```bash
-uv run pytest
-uv run ruff check .
-
-uv run python -c "from pathlib import Path; from agent_project.agent import SYSTEM_PROMPT, run_agent; from agent_project.models import load_offers, load_profile; from agent_project.llm import OpenRouterClient; data = Path('data'); messages = [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': 'Pokaz oferty pasujace do mojego profilu.'}]; print(run_agent(OpenRouterClient(), messages, load_profile(data / 'profile.json'), load_offers(data / 'job_offers.json'), Path('traces/agent_run.jsonl')))"
-```
-
-### Aplikacja (jedna, na serwerze)
-
-Cały projekt działa jako jedna aplikacja na jednej maszynie: strona
-z logowaniem, pętla agenta, baza ofert z indeksem wektorowym i lokalny model
-do wektoryzacji (fastembed). Model językowy to dalej
-`google/gemma-4-26b-a4b-it` przez OpenRouter. Użytkownik korzysta z niej tylko
-przez przeglądarkę, po zalogowaniu.
+Cały projekt to jedna aplikacja na jednej maszynie: strona z logowaniem,
+pętla agenta, baza ofert z indeksem wektorowym i lokalny model do
+wektoryzacji (fastembed). Model językowy to `google/gemma-4-26b-a4b-it`
+przez OpenRouter. Użytkownik korzysta z aplikacji tylko przez przeglądarkę,
+po zalogowaniu.
 
 ```
-przeglądarka ──HTTPS──► Caddy ──► agent_project.web (127.0.0.1:8000)
+przeglądarka ──HTTPS / tunel SSH──► agent_project.web (127.0.0.1:8000)
                                    ├─ logowanie (jedno konto, var/account.json)
                                    ├─ agent ──► OpenRouter (gemma)
                                    │    └─ narzędzia: szukaj_ofert, przeszukaj_oferty,
@@ -130,43 +68,65 @@ przeglądarka ──HTTPS──► Caddy ──► agent_project.web (127.0.0.1:
 offer-update.timer (co godzinę) ──► offer_server.update ──► var/store, var/index
 ```
 
-Wyszukiwanie łączy ranking z kodu z oceną modelu. Kod liczy ranking dla
-całego profilu i tabela zawsze pokazuje jego czołówkę w całości. Agent
-przegląda 3× większą pulę z rankingu, szuka własnymi zapytaniami z filtrami
-i sprawdza wątpliwe oferty. Na końcu (`wybierz_oferty`) daje ofertom
-z rankingu ocenę „polecam” albo „uwaga” z powodem i dopisuje pod rankingiem
-dobre oferty, których ranking nie znalazł. Agent nie może usunąć oferty
-z rankingu, więc wynik nie jest gorszy niż sam ranking.
-Szczegóły bazy, wektoryzacji i aktualizacji: [docs/baza-ofert.md](docs/baza-ofert.md).
+**Wyszukiwanie** łączy ranking z kodu z oceną modelu:
 
-**Konto.** Jest jedno i nie da się zarejestrować przez stronę. Zakłada się je
-(albo zmienia hasło) na maszynie z aplikacją:
+1. Kod liczy ranking dla całego profilu (umiejętności, stanowisko,
+   preferencje). Tabela zawsze pokazuje jego czołówkę w całości.
+2. Agent przegląda 3× większą pulę z rankingu, szuka własnymi zapytaniami
+   z filtrami i sprawdza wątpliwe oferty.
+3. Na końcu (`wybierz_oferty`) daje ofertom z rankingu ocenę „polecam” albo
+   „uwaga” z powodem i dopisuje pod rankingiem dobre oferty, których ranking
+   nie znalazł.
 
-```bash
-uv run python -m agent_project.auth      # pyta o login i hasło (min. 10 znaków)
-```
+Agent nie może usunąć oferty z rankingu, więc wynik nie jest gorszy niż sam
+ranking. Szczegóły bazy, wektoryzacji i aktualizacji ofert:
+[docs/baza-ofert.md](docs/baza-ofert.md).
 
-W `var/account.json` zapisuje się tylko skrót hasła (scrypt). Sesja trwa 12 h
-i kończy się też przy restarcie aplikacji. Po 5 złych hasłach z rzędu logowanie
-jest zablokowane na 15 minut. Ciasteczko sesji ma `HttpOnly`, `SameSite=Strict`
-i `Secure`, a zapytania z innych stron są odrzucane.
+**Interfejs:**
 
-**Uruchomienie lokalne** (Windows albo Linux):
+- **Profil w rozmowie.** Opowiadasz o sobie zwykłym tekstem, a model pyta
+  o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
+  profil”; sam model nie może go zapisać. W rozmowie model może też
+  przeglądać bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
+- **Szukaj ofert.** Tabela pokazuje ranking z oceną agenta przy ofertach
+  („⚠” przy słabszych) i pod nim oferty oznaczone „znalezione przez agenta”.
+  Pod tabelą jest przebieg każdego kroku i ścieżka do śladu w `traces/`.
+- **Lista wybranych.** Każdy profil ma własną listę
+  (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
+  w oknie przeglądarki.
+
+**Ograniczenia każdego uruchomienia:** najwyżej 24 kroki modelu
+(`MAX_STEPS`) i 0,10 USD (`MAX_RUN_COST_USD`, oba w `agent.py`). Kilka
+niezależnych narzędzi, o które model prosi w jednej odpowiedzi, wykonuje się
+w jednym kroku. Uwaga: 24 kroki to więcej niż limit kursu (12).
+
+## Uruchomienie lokalne
+
+Windows albo Linux:
 
 ```bash
 uv sync --locked
-cp .env.example .env                     # MODEL_NAME i OPENROUTER_API_KEY
+cp .env.example .env                     # wpisz MODEL_NAME i OPENROUTER_API_KEY
 uv run python -m offer_server.update --seed data/offers_sample_justjoin.json data/offers_sample_rocketjobs.json
-uv run python -m agent_project.auth
-uv run python -m agent_project.web       # albo: powershell -File start.ps1
+uv run python -m agent_project.auth      # konto do logowania
+uv run python -m agent_project.web
 ```
 
-Potem otwórz http://127.0.0.1:8000 i zaloguj się. Pierwsza aktualizacja
-pobiera model (ok. 240 MB) do `var/models_cache/`.
+Na Windows wystarczy `powershell -ExecutionPolicy Bypass -File start.ps1`:
+sam zbuduje indeks i poprosi o konto, jeśli ich brakuje. Potem otwórz
+http://127.0.0.1:8000 i zaloguj się. Pierwsza aktualizacja pobiera model do
+wektoryzacji (ok. 240 MB) do `var/models_cache/`.
 
-**Wdrożenie na serwer (Linux, systemd).** Pliki w `deploy/` zakładają
-repozytorium sklonowane do `/home/ubuntu/server/CVpilot` i użytkownika
-`ubuntu`. Na innej maszynie zmień ścieżki i użytkownika.
+Plik `.env` zawiera klucz OpenRouter: nie commituj go i nie wpisuj klucza do
+kodu, śladów ani raportów.
+
+## Serwer
+
+Pliki w `deploy/` zakładają repozytorium sklonowane do
+`/home/ubuntu/server/CVpilot` i użytkownika `ubuntu`. Na innej maszynie zmień
+ścieżki i użytkownika.
+
+### Pierwsza instalacja
 
 ```bash
 cd ~/server/CVpilot && git pull && uv sync --locked --no-dev
@@ -177,74 +137,110 @@ sudo cp deploy/cvpilot.service deploy/offer-update.service deploy/offer-update.t
 sudo systemctl daemon-reload
 sudo systemctl start offer-update          # pierwsza baza i indeks; postęp: journalctl -u offer-update -f
 sudo systemctl enable --now cvpilot offer-update.timer
-journalctl -u cvpilot -f
+journalctl -u cvpilot -f                   # logi aplikacji
 ```
 
-Aplikacja słucha tylko na `127.0.0.1`. Do internetu wystawia ją Caddy
-z HTTPS (`deploy/Caddyfile.example`: wpisz swoją domenę, otwórz porty 80
-i 443). Bez HTTPS hasło szłoby przez sieć jawnie, dlatego portu 8000 nie
-otwiera się w zaporze. Stary serwer ofert (`offer-server.service`, port 8100)
-jest już niepotrzebny: `sudo systemctl disable --now offer-server`.
+Stary serwer ofert (`offer-server.service`, port 8100) jest już
+niepotrzebny: `sudo systemctl disable --now offer-server`.
 
-**Połączenie bez domeny (tunel SSH).** Na swoim komputerze otwórz tunel
-i zostaw okno otwarte:
+### Połączenie
+
+Aplikacja słucha tylko na `127.0.0.1:8000`, więc adres
+`http://ADRES_SERWERA:8000` nie działa. Portu 8000 nie otwiera się w zaporze:
+bez szyfrowania hasło szłoby przez sieć jawnie. Są dwa sposoby, żeby się
+połączyć.
+
+**Tunel SSH (bez domeny).** Na swoim komputerze otwórz tunel i zostaw okno
+otwarte:
 
 ```bash
 ssh -L 8000:127.0.0.1:8000 ubuntu@ADRES_SERWERA
 ```
 
-Potem w przeglądarce wejdź na http://127.0.0.1:8000 (albo
-http://localhost:8000). Adres `http://ADRES_SERWERA:8000` nie działa, bo
-aplikacja nie słucha na publicznym adresie. Tunel trzeba otworzyć ponownie
-po zamknięciu okna, zerwaniu połączenia albo restarcie serwera; restart
-samej aplikacji go nie przerywa.
+Potem wejdź w przeglądarce na http://127.0.0.1:8000. Tunel trzeba otworzyć
+ponownie po zamknięciu okna, zerwaniu połączenia albo restarcie serwera;
+restart samej aplikacji go nie przerywa.
 
-**Aktualizacja.** Pobranie nowej wersji z gałęzi, którą śledzi serwer,
-doinstalowanie zależności i restart aplikacji:
+**Domena z HTTPS.** Caddy wystawia aplikację do internetu i sam zdobywa
+certyfikat. Skopiuj `deploy/Caddyfile.example` do `/etc/caddy/Caddyfile`,
+wpisz swoją domenę (jej rekord DNS musi wskazywać na serwer), otwórz porty 80
+i 443 i uruchom `sudo systemctl reload caddy`.
+
+### Aktualizacja
 
 ```bash
 cd ~/server/CVpilot && git pull && uv sync --locked --no-dev && sudo systemctl restart cvpilot
 git log --oneline -1 && systemctl status cvpilot   # wersja i stan aplikacji
 ```
 
-`git pull` pobiera tylko gałąź, na której jest serwer (`git branch
---show-current`); nowa gałąź na GitHubie wymaga `git checkout <gałąź>`
-albo scalenia jej z tą śledzoną. Zmienione na serwerze pliki danych
-(np. `data/profiles/`) zostają; jeśli `git pull` zgłosi, że nadpisałby
-zmiany, użyj `git stash`, `git pull`, `git stash pop`. Restart kończy
-sesje, więc po nim trzeba się zalogować ponownie.
+- `git pull` pobiera tylko gałąź, na której jest serwer
+  (`git branch --show-current`). Nowa gałąź na GitHubie wymaga
+  `git checkout <gałąź>` albo scalenia jej z tą śledzoną.
+- `uv sync` doinstalowuje zależności zgodnie z `uv.lock` (`--no-dev` pomija
+  narzędzia programistyczne).
+- Zmienione na serwerze pliki danych (np. `data/profiles/`) zostają. Jeśli
+  `git pull` zgłosi, że nadpisałby zmiany: `git stash`, `git pull`,
+  `git stash pop`.
+- Restart kończy sesje, więc po nim trzeba się zalogować ponownie.
 
-**Nowe hasło.** Hasła nie da się odczytać (zapisany jest tylko skrót). Nowe
-ustawia się tak samo jak konto, a restart je wczytuje i zdejmuje blokadę
-po złych hasłach:
+## Konto i hasło
+
+Konto jest jedno i nie da się zarejestrować przez stronę. Zakłada się je na
+maszynie z aplikacją; ta sama komenda ustawia nowe hasło, gdy zapomnisz
+starego (hasła nie da się odczytać):
 
 ```bash
-cd ~/server/CVpilot && .venv/bin/python -m agent_project.auth && sudo systemctl restart cvpilot
+uv run python -m agent_project.auth      # lokalnie
+cd ~/server/CVpilot && .venv/bin/python -m agent_project.auth && sudo systemctl restart cvpilot   # na serwerze
 ```
 
-Interfejs:
+Komenda pyta o login i hasło (min. 10 znaków). W `var/account.json`
+zapisuje się tylko skrót hasła (scrypt). Sesja trwa 12 h i kończy się przy
+restarcie aplikacji. Po 5 złych hasłach z rzędu logowanie jest zablokowane na
+15 minut; restart aplikacji zdejmuje blokadę. Ciasteczko sesji ma
+`HttpOnly`, `SameSite=Strict` i `Secure`, a zapytania z innych stron są
+odrzucane.
 
-- **Profil w rozmowie.** Opowiadasz o sobie zwykłym tekstem, a model pyta
-  o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
-  profil”; sam model nie może go zapisać. W rozmowie model może też przeglądać
-  bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
-- **Szukaj ofert.** Tabela po prawej pokazuje ranking z kodu z oceną agenta
-  przy ofertach („⚠” przy słabszych) i pod nim oferty oznaczone „znalezione
-  przez agenta”, a pod tabelą przebieg każdego kroku i ścieżkę do śladu
-  w `traces/`.
-- **Lista wybranych.** Każdy profil ma własną listę
-  (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
-  w oknie przeglądarki.
+## Testy i polecenia
 
-Ograniczenia każdego uruchomienia: najwyżej 24 kroki modelu (`MAX_STEPS`)
-i 0,10 USD (`MAX_RUN_COST_USD`, oba w `agent.py`). Kilka niezależnych narzędzi,
-o które model prosi w jednej odpowiedzi, wykonuje się w jednym kroku. Uwaga:
-24 kroki to więcej niż limit kursu (12).
+```bash
+uv run pytest
+uv run ruff check .
+uv run python -m agent_project.demo_runs   # przebiegi z prawdziwym modelem do evidence/
+```
 
-Testy (`uv run pytest`) nie łączą się z modelem i nie pobierają modelu do
-wektoryzacji: indeks budują z `HashingEmbedder`, a aplikację uruchamiają bez
-logowania (`auth=None`), co `main()` wyklucza. Plik `data/job_offers.json`
+Testy nie łączą się z modelem i nie pobierają modelu do wektoryzacji: indeks
+budują z `HashingEmbedder`, a aplikację uruchamiają bez logowania
+(`auth=None`), czego `main()` nie dopuszcza. Plik `data/job_offers.json`
 (24 fikcyjne oferty) służy już tylko testom i serwerowi MCP bez indeksu.
 
+Najważniejsze pliki:
+
+- `src/agent_project/agent.py`: pętla agenta, narzędzia, prompty i limity;
+- `src/agent_project/web.py`: serwer strony, logowanie, wyszukiwanie;
+- `src/agent_project/offer_db.py`: dostęp agenta do bazy ofert;
+- `src/agent_project/llm.py`: klient OpenRouter i klient testowy (mock);
+- `src/offer_server/`: pobieranie ofert, indeks wektorowy i ranking;
+- `deploy/`: usługi systemd i konfiguracja Caddy;
+- `traces/`: ślady uruchomień (poza Gitem), `evidence/`: ślady do oddania.
+
+## Zasady kursu
+
+- One model for all live work: `google/gemma-4-26b-a4b-it`.
+- USD 2 per key for the whole course, enforced by OpenRouter.
+- In your own code: at most 12 model steps and USD 0.10 per agent run.
+
+Praca z modelem kursu:
+
+- The model usually requests one tool call per turn. Tell it in the system
+  prompt that independent calls may be requested together.
+- For typed output, offer one tool whose parameters are your Pydantic schema
+  and validate its arguments. Keep `tool_choice` at its default, `"auto"`,
+  and give lists a maximum length.
+- Results vary between identical runs. Run your fixed evaluation set at least
+  three times and report the worst run as well as the average.
+- A typical agent run costs well under USD 0.01. Use the mock client in tests.
+- Copy the traces you submit to `evidence/`. Check them first for keys,
+  personal data, and absolute file paths.
+
 Use the assignments published on the course website as the source of truth.
- 
