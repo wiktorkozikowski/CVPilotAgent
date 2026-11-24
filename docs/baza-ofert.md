@@ -29,14 +29,22 @@ Model nie dostaje gotowej listy. Ma narzędzia tylko do odczytu
 | `porownaj_z_profilem` | które umiejętności z profilu oferta wymienia, których nie, zgodność tytułu, niezgodności z preferencjami |
 | `wybierz_oferty` | ocena modelu (polecam / uwaga, z powodem) ofert z rankingu i oferty, które dopisuje pod rankingiem; ranking zostaje w tabeli w całości |
 
-**Poziom to twardy wymóg.** Poziom oferty bierze się z tytułu („Senior”,
-„Junior”) i z liczby lat doświadczenia w wymaganiach („3+ years of
-experience”, „min. 4 lata doświadczenia”; liczy się największa, a tylko
-w pobliżu słowa o doświadczeniu, więc „na rynku od 20 lat” się nie liczy).
-Profil junior dopuszcza do 2 lat, mid do 5; gdy profil ma doświadczenie
-z datami, granicą jest też jego staż + 1 rok. Oferta powyżej granicy dostaje
-niezgodność „wymaga N+ lat doświadczenia”, w rankingu trafia na koniec,
-`przeszukaj_oferty` jej nie pokazuje, a `wybierz_oferty` ją odrzuca.
+**Poziom to twardy wymóg.** Poziom oferty to przede wszystkim znacznik
+z serwisu (justjoin.it i rocketjobs.pl: intern, junior, mid, senior, expert,
+manager, c_level), czytany z danych strony oferty. Gdy oferta go nie ma,
+poziom bierze się z tytułu („Senior”, „Junior”). Znacznik wygrywa z tytułem:
+„Data Analyst (Junior / Mid)” oznaczona jako mid to oferta mid. Do tego
+liczy się liczba lat doświadczenia w wymaganiach („3+ years of experience”,
+„min. 4 lata doświadczenia”; liczy się największa, a tylko w pobliżu słowa
+o doświadczeniu, więc „na rynku od 20 lat” się nie liczy). Profil junior
+dopuszcza do 2 lat, mid do 5; gdy profil ma doświadczenie z datami, granicą
+jest też jego staż + 1 rok. Oferty innego poziomu albo powyżej granicy lat
+nie pojawiają się w rankingu ani w `przeszukaj_oferty`, a `wybierz_oferty`
+je odrzuca.
+
+Oferty zapisane, zanim aplikacja zaczęła czytać znacznik poziomu, są
+pobierane ponownie przy kolejnych aktualizacjach (po nowych ofertach, w tym
+samym limicie na przebieg). Do tego czasu ich poziom bierze się z tytułu.
 
 Każde narzędzie sprawdza argumenty w kodzie. Model nie pisze zapytań do bazy
 (np. SQL), nie widzi danych kontaktowych z profilu i niczego w bazie nie

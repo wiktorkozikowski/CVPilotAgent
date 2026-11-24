@@ -1,6 +1,8 @@
 """Finds offers for a profile: vector search first, then the user's preferences.
 
-Preferences (level, work mode, form of employment, pay) never hide an offer,
+The level is a hard requirement: an offer above (or beside) the user's level,
+by the site's level tag, the title or the years it asks for, is left out.
+Other preferences (work mode, form of employment, pay) never hide an offer,
 because offer data is incomplete. An offer that goes against one loses half of
 its score and says why in `conflicts`.
 """
@@ -50,6 +52,8 @@ YEARS_PATTERN = re.compile(
 EXPERIENCE_WORDS = re.compile(r"experien|doswiadcz|stazu pracy")
 EXPERIENCE_CONTEXT_CHARS = 80
 MAX_PLAUSIBLE_YEARS = 15
+# How level_conflicts starts its reasons; such offers are left out.
+LEVEL_CONFLICT_PREFIXES = ("poziom:", "wymaga ")
 # The most years an offer may ask for at each level the user names.
 LEVEL_MAX_YEARS = {"intern": 0, "junior": 2, "mid": 5, "senior": 99, "lead": 99}
 
@@ -136,6 +140,14 @@ def offer_levels(title: str) -> list[str]:
     return [level for level, names in LEVEL_WORDS.items() if title_words & set(names)]
 
 
+def doc_levels(offer: OfferDoc) -> list[str]:
+    """The offer's level: the site's tag when it has one, else the title's.
+
+    The tag wins: "Data Analyst (Junior / Mid)" tagged mid is a mid offer.
+    """
+    return [offer.level] if offer.level else offer_levels(offer.title)
+
+
 def _is_remote(offer: OfferDoc) -> bool:
     location = plain(offer.location)
     return offer.remote or any(marker in location for marker in REMOTE_MARKERS)
@@ -208,7 +220,7 @@ def allowed_years(profile: SearchProfile) -> float | None:
 def level_conflicts(profile: SearchProfile, offer: OfferDoc) -> list[str]:
     """The level named in the title or the years asked in the text do not fit."""
     found = []
-    levels = offer_levels(offer.title)
+    levels = doc_levels(offer)
     if profile.seniority and levels and not set(levels) & set(profile.seniority):
         found.append(f"poziom: {', '.join(levels)}")
     years = required_years(offer)
@@ -307,15 +319,11 @@ def search(
                 requirements=re.sub(r"\n{2,}", "\n", excerpt(offer)),
             )
         )
-    # Offers at the user's level come first; one above it shows up only when
-    # there are not enough others.
-    above = {
-        c.id
+    # The level is a hard requirement: offers above it are never shown.
+    candidates = [
+        c
         for c in candidates
-        if any(r.startswith(("poziom:", "wymaga ")) for r in c.conflicts)
-    }
-    candidates.sort(
-        key=lambda c: (c.id not in above, c.score, len(c.matched_skills)),
-        reverse=True,
-    )
+        if not any(r.startswith(LEVEL_CONFLICT_PREFIXES) for r in c.conflicts)
+    ]
+    candidates.sort(key=lambda c: (c.score, len(c.matched_skills)), reverse=True)
     return candidates[:limit]

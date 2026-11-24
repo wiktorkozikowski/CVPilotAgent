@@ -24,9 +24,9 @@ from offer_server.ranking import (
     MAX_LIMIT,
     SearchProfile,
     conflicts,
+    doc_levels,
     level_conflicts,
     matched_skills,
-    offer_levels,
     required_years,
     search,
     title_score,
@@ -247,7 +247,7 @@ class OfferDB:
             if remote is not None and _is_remote(doc) != remote:
                 continue
             if level is not None:
-                levels = offer_levels(doc.title)
+                levels = doc_levels(doc)
                 if levels and level not in levels:
                     continue
                 years = required_years(doc)

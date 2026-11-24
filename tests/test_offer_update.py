@@ -259,6 +259,35 @@ def test_employment_type_given_as_text_becomes_a_list() -> None:
     assert record["description"] == "Wymagania\nSQL\nPython"
 
 
+def test_the_sites_level_tag_is_read_from_the_page_data() -> None:
+    # As on justjoin.it: the level is in the page's script data, quotes escaped.
+    data = '<script>self.__next_f.push("{\\"offer\\":{\\"slug\\":\\"x\\",'
+    data += '\\"experienceLevel\\":{\\"label\\":\\"mid\\",\\"value\\":\\"mid\\"}}")'
+    data += "</script>"
+
+    tagged = parse_offer(f"{BASE}/job-offer/x", page("X") + data, "justjoin")
+    untagged = parse_offer(f"{BASE}/job-offer/y", page("Y"), "justjoin")
+
+    assert tagged["experience_level"] == "mid"
+    assert untagged["experience_level"] is None
+
+
+def test_offers_saved_without_a_level_are_fetched_again(tmp_path) -> None:
+    board = FakeBoard({"old": "Data Analyst"})
+    store_dir = tmp_path / "store"
+    store_dir.mkdir()
+    old = parse_offer(board.url("old"), page("Data Analyst"), "justjoin")
+    del old["experience_level"]  # saved before the level was read
+    (store_dir / "offers.jsonl").write_text(json.dumps(old) + "\n", "utf-8")
+
+    run(tmp_path, board)
+    run(tmp_path, board)
+
+    # Fetched once to get the level; the record has the key now, even as None.
+    assert board.requested.count(board.url("old")) == 1
+    assert "experience_level" in load_store(store_dir)[board.url("old")]
+
+
 def test_running_app_picks_up_a_new_index(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(holder_module, "RELOAD_CHECK_SECONDS", 0)
     folder = tmp_path / "index"

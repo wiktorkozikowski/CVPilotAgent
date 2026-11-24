@@ -267,11 +267,12 @@ def test_years_asked_in_the_text_count_as_a_level_conflict() -> None:
     assert db.level_problems(junior, "justjoin:python-junior") == []
     assert db.level_problems(junior, "justjoin:old-firm") == []
 
-    # The browse tool hides it, the ranking puts it last, the choice refuses it.
+    # The browse tool and the ranking hide it, the choice refuses it.
     found = {item["id"] for item in db.browse("Python", profile=junior)}
     assert "justjoin:python-exp" not in found
     ranked = [m.offer.id for m in db.match_profile(junior, 3)]
-    assert ranked[-1] == "justjoin:python-exp"
+    assert "justjoin:python-exp" not in ranked
+    assert "justjoin:python-junior" in ranked
     picks = []
     result = json.loads(
         run_tool(
@@ -310,3 +311,31 @@ def test_years_of_experience_come_from_job_dates() -> None:
     )
     assert years_of_experience(profile, date(2026, 11, 1)) == 2.8
     assert years_of_experience(PROFILE) is None
+
+
+def test_the_sites_level_tag_wins_over_the_title() -> None:
+    from conftest import make_offer_db, raw_offer
+
+    db = make_offer_db(
+        [
+            raw_offer(
+                "junior-mid",
+                title="Data Analyst (Junior / Mid)",
+                description="Wymagania\nSQL, Power BI",
+                experience_level="mid",
+            ),
+            raw_offer(
+                "plain",
+                title="Data Analyst",
+                company="Inna",
+                description="Wymagania\nSQL, Power BI",
+                experience_level="junior",
+            ),
+        ]
+    )
+    junior = Profile.model_validate({**PROFILE.model_dump(), "seniority": ["junior"]})
+
+    assert db.level_problems(junior, "justjoin:junior-mid") == ["poziom: mid"]
+    assert db.level_problems(junior, "justjoin:plain") == []
+    ranked = [m.offer.id for m in db.match_profile(junior, 5)]
+    assert ranked == ["justjoin:plain"]

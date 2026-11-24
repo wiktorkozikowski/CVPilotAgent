@@ -24,6 +24,9 @@ JSON_LD = re.compile(
     r'<script type="application/ld\+json"[^>]*>(.*?)</script>', re.DOTALL
 )
 LOC = re.compile(r"<loc>([^<]+)</loc>")
+# The level the site shows on the offer ("junior", "mid", ...). It is not in the
+# JobPosting block, only in the page data, where quotes may be escaped.
+OFFER_LEVEL = re.compile(r'experienceLevel\\*":\{\\*"label\\*":\\*"(\w+)')
 BLOCK_TAGS = {"p", "li", "br", "ul", "ol", "h1", "h2", "h3", "h4", "div"}
 
 
@@ -91,6 +94,7 @@ def parse_offer(url: str, page: str, source: str) -> dict | None:
         kinds = data.get("employmentType")
         if isinstance(kinds, str):
             kinds = [kinds]
+        level = OFFER_LEVEL.search(page)
         return {
             "id": url.rstrip("/").rsplit("/", 1)[-1],
             "source": source,
@@ -108,5 +112,6 @@ def parse_offer(url: str, page: str, source: str) -> dict | None:
             "date_posted": data.get("datePosted"),
             "valid_through": data.get("validThrough"),
             "description": html_to_text(data.get("description") or ""),
+            "experience_level": level.group(1) if level else None,
         }
     return None

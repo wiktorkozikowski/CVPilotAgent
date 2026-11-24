@@ -138,6 +138,9 @@ def sync_site(
 
     new = [url for url in urls if url not in store]
     random.Random().shuffle(new)  # no part of the sitemap waits forever
+    # Offers saved before the level tag was read are fetched again, after the
+    # new ones; a record that has the key (even None) is not fetched again.
+    new += [u for u in urls if u in store and "experience_level" not in store[u]]
     last_start = 0.0
     for number, url in enumerate(new):
         if number >= budget or clock() >= deadline:

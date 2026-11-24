@@ -99,6 +99,10 @@ class RawOffer(BaseModel):
     date_posted: str | None = None
     valid_through: str | None = None
     description: str = ""
+    # The level the site gives ("junior", "mid", ...); None if it gives none.
+    # Missing from records saved before it was read; update.py fetches those
+    # again.
+    experience_level: str | None = None
 
     # Older downloaders (fetch_offers.py, fetch_all.py) keep the page's values
     # as they were: null for a missing title or city, a single string for one
@@ -117,6 +121,18 @@ class RawOffer(BaseModel):
     @classmethod
     def _text_is_list(cls, value: Any) -> Any:
         return [value] if isinstance(value, str) else value
+
+
+# The sites' level names, mapped to the levels a profile can have.
+SITE_LEVELS = {
+    "intern": "intern",
+    "junior": "junior",
+    "mid": "mid",
+    "senior": "senior",
+    "expert": "senior",
+    "manager": "lead",
+    "c_level": "lead",
+}
 
 
 class OfferDoc(BaseModel):
@@ -139,6 +155,8 @@ class OfferDoc(BaseModel):
     requirements: str
     duties: str
     description: str
+    # The site's level in the profile's terms (SITE_LEVELS), if it gives one.
+    level: str | None = None
 
 
 def _json_lines(text: str) -> tuple[list, int]:
@@ -268,6 +286,7 @@ def clean_offers(offers: list[RawOffer], today: date) -> tuple[list[OfferDoc], d
             requirements=sections["requirements"],
             duties=sections["duties"],
             description=offer.description,
+            level=SITE_LEVELS.get(offer.experience_level or ""),
         )
         # The same job is often listed under several addresses (categories).
         key = (plain(doc.company), plain(doc.title), city_key(doc.location))

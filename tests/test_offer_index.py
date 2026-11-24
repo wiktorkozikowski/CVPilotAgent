@@ -136,7 +136,8 @@ def test_search_ranks_by_role_and_reports_conflicts(index) -> None:
 
     assert found[0].id == "justjoin:analyst"
     assert by_id["justjoin:analyst"].matched_skills == ["SQL", "Excel"]
-    assert by_id["justjoin:senior"].conflicts == ["poziom: senior"]
+    # The level is a hard requirement: the senior offer is left out.
+    assert "justjoin:senior" not in by_id
     assert set(by_id["justjoin:remote"].conflicts) == {
         "forma zatrudnienia: CONTRACTOR",
         "wynagrodzenie do 40 PLN/HOUR, poniżej oczekiwań",
