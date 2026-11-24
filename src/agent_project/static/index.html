@@ -57,7 +57,6 @@
     .app-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .app-head h1 { margin-right: auto; }
     .reason { display: block; margin-top: 4px; color: var(--muted); font-size: .9em; }
-    .reason.warn { color: #b45309; }
     .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px;
       font-size: .75em; color: var(--accent-text); background: var(--accent); }
     .panel-head { display: flex; justify-content: space-between; align-items: center;
@@ -1174,15 +1173,14 @@
             // Not in the code ranking: the agent found it by its own query.
             const badge = document.createElement("span");
             badge.className = "badge";
-            badge.textContent = "znalezione przez agenta";
+            badge.textContent = "spoza rankingu";
             td.appendChild(badge);
           }
           if (i === 0 && m.reason) {
-            // The agent's verdict on this offer.
+            // Why the agent chose this offer.
             const why = document.createElement("span");
-            const warn = m.verdict === "uwaga";
-            why.className = warn ? "reason warn" : "reason";
-            why.textContent = (warn ? "⚠ " : "") + m.reason;
+            why.className = "reason";
+            why.textContent = m.reason;
             td.appendChild(why);
           }
           tr.appendChild(td);
@@ -1214,14 +1212,17 @@
       $("chat-matches").replaceChildren(
         ...matchRows(matches, search.profile_id, $("chat-results-msg")),
       );
-      const added = matches.filter((m) => m.source === "agent").length;
-      const warned = matches.filter((m) => m.verdict === "uwaga").length;
-      const found = run && run.picked
-        ? `Ranking: ${matches.length - added} ofert, agent dodał: ${added}, z uwagami: ${warned}.`
-        : `Znaleziono ofert: ${matches.length}.`;
-      setMsg($("chat-results-msg"),
-        matches.length ? found : "Nie znaleziono ofert.",
-        matches.length > 0);
+      const picked = run && run.picked;
+      const pool = picked && run.candidates ? ` spośród ${run.candidates} kandydatów` : "";
+      let found;
+      if (picked) {
+        found = matches.length
+          ? `Agent wybrał dobrze dopasowane oferty: ${matches.length}${pool}.`
+          : `Agent nie znalazł dobrze dopasowanych ofert${pool}. ${run.answer || ""}`.trim();
+      } else {
+        found = matches.length ? `Znaleziono ofert: ${matches.length}.` : "Nie znaleziono ofert.";
+      }
+      setMsg($("chat-results-msg"), found, matches.length > 0);
       const steps = run && run.steps ? run.steps : [];
       renderSteps(steps, "chat-steps");
       $("chat-trace").textContent = run && run.trace ? `Ślad uruchomienia: ${run.trace}` : "";

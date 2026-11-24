@@ -23,11 +23,11 @@ Model nie dostaje gotowej listy. Ma narzędzia tylko do odczytu
 
 | Narzędzie | Co robi |
 |---|---|
-| `szukaj_ofert` | ranking dla całego profilu (opis niżej), punkt startowy |
+| `szukaj_ofert` | ranking dla całego profilu (opis niżej): do 100 kandydatów w skróconej formie, punkt startowy |
 | `przeszukaj_oferty` | wyszukiwanie po znaczeniu zapytania, które model pisze sam, z filtrami: miasto, zdalnie, poziom, forma zatrudnienia; pomija oferty już widziane |
 | `pokaz_oferte` | jedna oferta w całości (wymagania, obowiązki, link, termin) |
 | `porownaj_z_profilem` | które umiejętności z profilu oferta wymienia, których nie, zgodność tytułu, niezgodności z preferencjami |
-| `wybierz_oferty` | ocena modelu (polecam / uwaga, z powodem) ofert z rankingu i oferty, które dopisuje pod rankingiem; ranking zostaje w tabeli w całości |
+| `wybierz_oferty` | wybór modelu: tylko oferty naprawdę dobrze dopasowane, najwyżej tyle, ile chce użytkownik, z powodem; pusta lista oznacza brak dobrych dopasowań. Tylko ten wybór trafia do tabeli |
 
 **Poziom to twardy wymóg.** Poziom oferty to przede wszystkim znacznik
 z serwisu (justjoin.it i rocketjobs.pl: intern, junior, mid, senior, expert,

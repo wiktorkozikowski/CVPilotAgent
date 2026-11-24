@@ -28,8 +28,8 @@ i powodem przy każdej. Projekt na kurs **Designing LLM/VLM Agents**.
   profil nie trafia do repozytorium.
 - **Tools:** do odczytu bazy ofert `szukaj_ofert` (ranking dla profilu),
   `przeszukaj_oferty` (własne zapytanie i filtry), `pokaz_oferte`,
-  `porownaj_z_profilem` i `wybierz_oferty` (oceny agenta i dodane przez
-  niego oferty, z powodami); `dodaj_do_listy` (odwracalny zapis)
+  `porownaj_z_profilem` i `wybierz_oferty` (oferty wybrane przez agenta
+  spośród 100 kandydatów z rankingu, z powodami); `dodaj_do_listy` (odwracalny zapis)
   i `usun_z_listy` (wymaga potwierdzenia użytkownika w aplikacji).
   `szukaj_ofert` i `dodaj_do_listy` są też w serwerze MCP, usuwanie nie.
   Każde narzędzie waliduje argumenty w kodzie.
@@ -68,19 +68,21 @@ przeglądarka ──HTTPS / tunel SSH──► agent_project.web (127.0.0.1:8000
 offer-update.timer (co godzinę) ──► offer_server.update ──► var/store, var/index
 ```
 
-**Wyszukiwanie** łączy ranking z kodu z oceną modelu:
+**Wyszukiwanie** ma dwa etapy:
 
-1. Kod liczy ranking dla całego profilu (umiejętności, stanowisko,
-   preferencje). Tabela zawsze pokazuje jego czołówkę w całości.
-2. Agent przegląda 3× większą pulę z rankingu, szuka własnymi zapytaniami
-   z filtrami i sprawdza wątpliwe oferty.
-3. Na końcu (`wybierz_oferty`) daje ofertom z rankingu ocenę „polecam” albo
-   „uwaga” z powodem i dopisuje pod rankingiem dobre oferty, których ranking
-   nie znalazł.
+1. **Kandydaci z kodu.** Ranking liczy dopasowanie całej bazy do profilu
+   (podobieństwo treści, stanowisko, umiejętności, lokalizacja) i wybiera
+   100 najlepszych ofert. Oferty innego poziomu niż profil odpadają już tutaj.
+2. **Wybór agenta.** Agent przegląda tych 100 kandydatów, sprawdza wątpliwe
+   oferty (`porownaj_z_profilem`, `pokaz_oferte`) i w `wybierz_oferty` wybiera
+   tylko naprawdę dobrze dopasowane, najwyżej tyle, ile chcesz, każdą
+   z powodem.
 
-Agent nie może usunąć oferty z rankingu, więc wynik nie jest gorszy niż sam
-ranking. Szczegóły bazy, wektoryzacji i aktualizacji ofert:
-[docs/baza-ofert.md](docs/baza-ofert.md).
+Tabela pokazuje tylko wybór agenta. Wysoki wynik rankingu nie wystarcza:
+oferta musi pasować stanowiskiem, kluczowymi wymaganiami, poziomem
+i lokalizacją. Jeśli dobrych ofert jest mniej, agent pokazuje mniej, a jeśli
+nie ma żadnej, pisze, że nie znalazł dopasowań i dlaczego. Szczegóły bazy,
+wektoryzacji i aktualizacji ofert: [docs/baza-ofert.md](docs/baza-ofert.md).
 
 **Interfejs:**
 
@@ -88,9 +90,11 @@ ranking. Szczegóły bazy, wektoryzacji i aktualizacji ofert:
   o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
   profil”; sam model nie może go zapisać. W rozmowie model może też
   przeglądać bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
-- **Szukaj ofert.** Tabela pokazuje ranking z oceną agenta przy ofertach
-  („⚠” przy słabszych) i pod nim oferty oznaczone „znalezione przez agenta”.
-  Pod tabelą jest przebieg każdego kroku i ścieżka do śladu w `traces/`.
+- **Szukaj ofert.** Tabela pokazuje oferty wybrane przez agenta z powodem
+  przy każdej („spoza rankingu” przy ofertach, które agent znalazł własnym
+  zapytaniem). Nad tabelą jest liczba wybranych spośród kandydatów albo
+  informacja, że dobrych dopasowań nie ma. Pod tabelą jest przebieg każdego
+  kroku i ścieżka do śladu w `traces/`.
 - **Lista wybranych.** Każdy profil ma własną listę
   (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
   w oknie przeglądarki.

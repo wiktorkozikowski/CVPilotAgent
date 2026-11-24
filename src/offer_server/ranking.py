@@ -28,7 +28,8 @@ LOCATION_WEIGHT = 0.1
 SKILLS_FOR_FULL_SCORE = 5
 TITLE_MATCH_TO_RETRIEVE = 0.5
 CONFLICT_FACTOR = 0.5
-MAX_LIMIT = 30
+# The ranking hands the agent up to this many candidates.
+MAX_LIMIT = 100
 MIN_RETRIEVED = 100
 REMOTE_MARKERS = ("remote", "zdaln")
 # Words in an offer title that name its level.

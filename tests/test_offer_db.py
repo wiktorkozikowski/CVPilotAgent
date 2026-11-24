@@ -178,13 +178,7 @@ def test_agent_browses_compares_and_picks(offer_db, tmp_path) -> None:
     )
 
     assert answer == "Polecam raportowanie w Krakowie."
-    assert picks == [
-        {
-            "offer_id": "justjoin:bi-krakow",
-            "reason": "SQL i Power BI.",
-            "verdict": "polecam",
-        }
-    ]
+    assert picks == [{"offer_id": "justjoin:bi-krakow", "reason": "SQL i Power BI."}]
     results = [
         json.loads(line)["payload"]
         for line in trace.read_text("utf-8").splitlines()

@@ -69,8 +69,8 @@ MAX_BODY_BYTES = 64 * 1024
 MAX_CHAT_CHARS = 2000
 SEARCH_LIMIT = 10  # offers shown when the user does not say how many
 MAX_SEARCH_LIMIT = 30
-# The agent reviews this many times more ranked offers than the table shows.
-CANDIDATE_FACTOR = 3
+# Candidates the ranking hands the agent; it picks the offers to show.
+CANDIDATE_POOL = 100
 # The chat may browse the database too, but not pick (that is the search button).
 CHAT_DB_TOOLS = [t for t in DB_TOOLS if t["function"]["name"] != "wybierz_oferty"]
 SECURITY_HEADERS = {
@@ -215,44 +215,22 @@ def _offer_row(
     )
 
 
-def _merge_rows(
+def _picked_rows(
     config: "_Config",
     profile: Profile,
     picks: list[dict[str, str]],
     matches: list[OfferMatch],
     limit: int,
 ) -> list[dict[str, Any]]:
-    """The table: the top `limit` of the code ranking, in its order and never
-    shortened, with the agent's verdict and reason where it gave one; below it
-    up to `limit` offers the agent added (source "agent")."""
-    notes = {pick["offer_id"]: pick for pick in picks}
+    """The table: the offers the agent chose, best first, at most `limit`, each
+    with its reason. Source "agent" marks one found outside the ranking."""
     ranked = {m.offer.id: m for m in matches}
     rows = []
-    for match in matches[:limit]:
-        row = {**_match_to_dict(match), "source": "ranking"}
-        note = notes.get(match.offer.id)
-        if note is not None:
-            row["reason"] = note["reason"]
-            row["verdict"] = note.get("verdict", "polecam")
-        rows.append(row)
-    shown = {row["id"] for row in rows}
-    added = 0
-    for pick in picks:
-        if added == limit or pick["offer_id"] in shown:
-            continue
+    for pick in picks[:limit]:
         row = _offer_row(config, profile, pick["offer_id"], ranked)
-        if row is None:
-            continue
-        rows.append(
-            {
-                **row,
-                "source": "agent",
-                "reason": pick["reason"],
-                "verdict": pick.get("verdict", "polecam"),
-            }
-        )
-        shown.add(row["id"])
-        added += 1
+        if row is not None:
+            source = "ranking" if pick["offer_id"] in ranked else "agent"
+            rows.append({**row, "source": source, "reason": pick["reason"]})
     return rows
 
 
@@ -752,15 +730,15 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 self._send_json(404, {"error": "Nie ma takiego profilu."})
                 return
 
-            # One ranking: the agent's szukaj_ofert and the table use these
-            # candidates. With the database the agent reviews a wider pool,
-            # comments on the ranked offers and adds ones it found itself
-            # (wybierz_oferty); the table keeps the ranking whole.
-            pool = limit
-            if config.offer_db is not None:
-                pool = min(limit * CANDIDATE_FACTOR, MAX_SEARCH_LIMIT)
+            # One ranking: the agent's szukaj_ofert uses these candidates.
+            # With the database the ranking picks the closest CANDIDATE_POOL
+            # offers and the agent chooses the ones that really fit
+            # (wybierz_oferty); only those are shown, maybe fewer or none.
             try:
-                matches = _find_matches(config, profile, pool)
+                if config.offer_db is None:
+                    matches = _find_matches(config, profile, limit)
+                else:
+                    matches = config.offer_db.match_profile(profile, CANDIDATE_POOL)
             except ValueError as error:
                 self._send_json(400, {"error": str(error)})
                 return
@@ -781,9 +759,9 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 request = f"Pokaż {limit} ofert pasujących do profilu: {profile.name}."
             else:
                 request = (
-                    f"Oceń {limit} najlepszych ofert z rankingu dla profilu: "
-                    f"{profile.name}, i dodaj najwyżej {limit} dobrych ofert, "
-                    "których ranking nie znalazł."
+                    f"Wybierz najwyżej {limit} ofert naprawdę dobrze "
+                    f"dopasowanych do profilu: {profile.name}. Jeśli dobrych "
+                    "jest mniej albo nie ma żadnej, napisz to."
                 )
             messages = [
                 {"role": "system", "content": system_prompt(config.offer_db)},
@@ -822,11 +800,10 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 return
 
             if config.offer_db is not None:
-                # Offers the agent saw stay readable on the shortlist later.
-                seen = [o for o in offers if config.offer_db.get(o.id) is not None]
-                remember_offers(config.seen_offers_path, seen)
-            if config.offer_db is not None:
-                rows = _merge_rows(config, profile, picks, matches, limit)
+                rows = _picked_rows(config, profile, picks, matches, limit)
+                # The offers shown stay readable on the shortlist later.
+                shown = [config.offer_db.offer(row["id"]) for row in rows]
+                remember_offers(config.seen_offers_path, [o for o in shown if o])
             else:
                 rows = [_match_to_dict(m) for m in matches[:limit]]
             self._send_json(
@@ -834,8 +811,10 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 {
                     "profile": {"id": profile_id, **profile.model_dump()},
                     "answer": answer,
-                    # True when the agent saved its verdicts (wybierz_oferty).
-                    "picked": bool(picks),
+                    # True when the database was searched and the agent chose
+                    # (rows may be empty: no good matches).
+                    "picked": config.offer_db is not None,
+                    "candidates": len(matches),
                     "matches": rows,
                     "trace": _trace_name(trace_path, config),
                     "steps": _trace_steps(trace_path),

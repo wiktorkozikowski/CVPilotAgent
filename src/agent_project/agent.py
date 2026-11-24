@@ -12,11 +12,24 @@ from agent_project.tracing import append_trace
 MAX_RUN_COST_USD = 0.10
 MAX_STEPS = 24
 # The model sees this much of each offer's requirements; the rest stays for CVs.
-REQUIREMENTS_FOR_MODEL = 400
+# Short, because szukaj_ofert hands it up to 100 candidates at once.
+REQUIREMENTS_FOR_MODEL = 250
+# Fields of a ranked offer the model gets; the link and source are left out.
+OFFER_FIELDS_FOR_MODEL = {
+    "id",
+    "title",
+    "company",
+    "location",
+    "remote",
+    "employment_type",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "salary_unit",
+    "requirements",
+}
 MAX_PICKS = 30
 MAX_REASON_CHARS = 300
-# The agent's verdict on an offer: recommended, or shown with a warning.
-VERDICTS = ("polecam", "uwaga")
 
 # Finds offers for a profile: the offer database, or the local matching.
 SearchFn = Callable[[Profile, int], list[OfferMatch]]
@@ -27,8 +40,10 @@ TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "szukaj_ofert",
             "description": (
-                "Znajduje oferty pasujące do umiejętności użytkownika i zwraca je "
-                "od najlepiej dopasowanych. Pole conflicts wymienia, co w ofercie "
+                "Zwraca kandydatów: oferty pasujące do profilu użytkownika, od "
+                "najlepiej dopasowanych według rankingu w kodzie (score). Pole "
+                "matched_skills to umiejętności z profilu, które oferta wymienia; "
+                "conflicts wymienia, co w ofercie "
                 "nie zgadza się z preferencjami użytkownika (poziom, tryb pracy, "
                 "forma zatrudnienia, wynagrodzenie). Użyj, gdy użytkownik chce "
                 "zobaczyć oferty pracy."
@@ -38,7 +53,9 @@ TOOLS: list[dict[str, Any]] = [
                 "properties": {
                     "limit": {
                         "type": "integer",
-                        "description": "Ile ofert zwrócić, od 1 do 30. Domyślnie 10.",
+                        "description": (
+                            "Ilu kandydatów zwrócić, od 1 do 100. Domyślnie 10."
+                        ),
                     }
                 },
                 "required": [],
@@ -178,12 +195,11 @@ DB_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "wybierz_oferty",
             "description": (
-                "Zapisuje Twoją ocenę ofert: oferty z rankingu szukaj_ofert "
-                "(z oceną polecam albo uwaga i krótkim powodem) oraz oferty "
-                "znalezione przez przeszukaj_oferty, które dodajesz do wyników. "
-                "Ranking zostaje pokazany w całości; oferty z oceną uwaga "
-                "dostają ostrzeżenie, a nowe oferty trafiają pod ranking. "
-                "Wywołaj raz, na końcu; kolejne wywołanie zastępuje poprzednie. "
+                "Zapisuje Twój wybór: oferty naprawdę dobrze dopasowane do "
+                "profilu, od najlepszej, każdą z krótkim powodem. Tylko te oferty "
+                "zobaczy użytkownik. Pusta lista oznacza, że dobrych dopasowań "
+                "nie ma. Wywołaj raz, na końcu; kolejne wywołanie zastępuje "
+                "poprzednie. "
                 "Oferty powyżej poziomu użytkownika (tytuł albo wymagane lata "
                 "doświadczenia) są odrzucane (refused). Zwraca status ok, "
                 "zapisane id (chosen), odrzucone z powodem (refused) i id, "
@@ -202,16 +218,8 @@ DB_TOOLS: list[dict[str, Any]] = [
                                 "powod": {
                                     "type": "string",
                                     "description": (
-                                        "Co pasuje i czego brakuje, jedno lub "
-                                        "dwa zdania."
-                                    ),
-                                },
-                                "ocena": {
-                                    "type": "string",
-                                    "enum": list(VERDICTS),
-                                    "description": (
-                                        "polecam (domyślnie) albo uwaga, gdy "
-                                        "oferta pasuje słabo."
+                                        "Co pasuje i czego brakuje, jedno "
+                                        "krótkie zdanie."
                                     ),
                                 },
                             },
@@ -245,30 +253,32 @@ SYSTEM_PROMPT = (
 # The prompt when the model can browse the offer database: it looks around and
 # makes the choice itself, so it must not stop after the first ranking.
 DB_SYSTEM_PROMPT = (
-    "Jesteś asystentem, który pomaga znaleźć pracę. Masz dostęp do całej bazy "
-    "ofert. Aplikacja pokazuje użytkownikowi ranking ofert policzony w kodzie; "
-    "Twoim zadaniem jest go uzupełnić: ocenić oferty z rankingu i dodać "
-    "dobre oferty, których ranking nie znalazł. Nie usuwasz ofert z rankingu.\n"
+    "Jesteś asystentem, który pomaga znaleźć pracę. Z kandydatów wybranych "
+    "przez ranking wybierasz oferty, które naprawdę dobrze pasują do profilu "
+    "użytkownika. Użytkownik zobaczy tylko Twój wybór.\n"
     "Pracuj w krokach:\n"
-    "1. szukaj_ofert z limitem 30: ranking dla całego profilu.\n"
-    "2. przeszukaj_oferty, 2-4 razy: własne zapytania z innymi nazwami "
-    "stanowisk, pokrewnymi rolami i najważniejszymi umiejętnościami z profilu; "
-    "dodaj filtry zgodne z preferencjami (miasto, praca zdalna, poziom).\n"
-    "3. porownaj_z_profilem albo pokaz_oferte dla ofert, co do których masz "
-    "wątpliwości. Nie oceniaj oferty tylko po tytule.\n"
-    "4. wybierz_oferty: dla ofert z rankingu, o które prosi użytkownik, "
-    "podaj ocenę (polecam albo uwaga) i powód: co pasuje i czego brakuje. "
-    "Dodaj też najlepsze oferty znalezione przez przeszukaj_oferty, których "
-    "nie ma w rankingu, najwyżej tyle, ile prosi użytkownik.\n"
-    "Poziom użytkownika to twardy wymóg: nie dodawaj ofert z conflicts "
-    "„poziom: …” albo „wymaga N+ lat doświadczenia” ani takich, których "
-    "wymagania wyraźnie są dla seniora; wybierz_oferty i tak je odrzuci. "
-    "Oferty z rankingu, które słabo pasują, oznacz jako uwaga i napisz "
-    "dlaczego.\n"
+    "1. szukaj_ofert z limitem 100: kandydaci z całej bazy, od najlepiej "
+    "dopasowanych według rankingu. Ranking patrzy na podobieństwo treści, więc "
+    "wysoki score nie oznacza, że użytkownik spełnia wymagania.\n"
+    "2. Przejrzyj kandydatów. Dla obiecujących, co do których masz wątpliwości, "
+    "użyj porownaj_z_profilem albo pokaz_oferte. Niezależne wywołania (np. kilka "
+    "porownaj_z_profilem) zlecaj razem w jednym kroku.\n"
+    "3. Opcjonalnie przeszukaj_oferty, gdy wśród kandydatów brakuje ról "
+    "pokrewnych do szukanych stanowisk.\n"
+    "4. wybierz_oferty: tylko oferty dobrze dopasowane, od najlepszej, "
+    "najwyżej tyle, ile prosi użytkownik, każda z krótkim powodem.\n"
+    "Oferta jest dobrze dopasowana, gdy: stanowisko odpowiada temu, czego "
+    "szuka użytkownik; użytkownik ma większość kluczowych wymagań (sprawdź "
+    "matched_skills i wymagania); poziom i wymagane lata doświadczenia pasują "
+    "do profilu; lokalizacja albo praca zdalna pasuje. Jeśli oferta wymaga "
+    "wielu technologii, których użytkownik nie zna, albo jest dla kogoś "
+    "z większym doświadczeniem, nie wybieraj jej, nawet przy wysokim score.\n"
+    "Lepiej mniej ofert niż słabe. Jeśli dobrych jest mniej, niż prosi "
+    "użytkownik, wybierz mniej. Jeśli nie ma żadnej, wywołaj wybierz_oferty "
+    "z pustą listą i napisz, że nie znalazłeś dobrych dopasowań i dlaczego "
+    "(np. czego najczęściej brakuje).\n"
     "5. Krótkie podsumowanie, bez wypisywania wszystkich ofert, bo tabela je "
     "pokazuje.\n"
-    "Niezależne wywołania narzędzi (np. kilka porownaj_z_profilem albo kilka "
-    "przeszukaj_oferty) możesz zlecić razem w jednym kroku. "
     f"Nie kończ przed wywołaniem wybierz_oferty. Masz najwyżej {MAX_STEPS} "
     "kroków. Używaj tylko id z wyników narzędzi; nie wymyślaj ofert, firm ani "
     "linków. Do listy wybranych (dodaj_do_listy) dodawaj tylko na prośbę "
@@ -278,9 +288,9 @@ DB_SYSTEM_PROMPT = (
 )
 # Sent once by the app when the model wants to finish without a choice.
 PICK_REMINDER = (
-    "Nie zapisałeś jeszcze oceny. Wywołaj teraz wybierz_oferty z ocenami ofert "
-    "z rankingu i ofertami, które dodajesz (z powodem przy każdej), a potem "
-    "krótko podsumuj."
+    "Nie zapisałeś jeszcze wyboru. Wywołaj teraz wybierz_oferty z ofertami, "
+    "które naprawdę dobrze pasują (z powodem przy każdej), albo z pustą listą, "
+    "jeśli takich nie ma, a potem krótko podsumuj."
 )
 
 
@@ -302,6 +312,11 @@ def _error(message: str) -> str:
 
 def _match_for_model(match: OfferMatch) -> dict[str, Any]:
     data = match.model_dump(mode="json", exclude_none=True)
+    data["offer"] = {
+        key: value
+        for key, value in data["offer"].items()
+        if key in OFFER_FIELDS_FOR_MODEL
+    }
     requirements = data["offer"].get("requirements")
     if requirements and len(requirements) > REQUIREMENTS_FOR_MODEL:
         data["offer"]["requirements"] = requirements[:REQUIREMENTS_FOR_MODEL] + " …"
@@ -367,9 +382,9 @@ def _pick(
     db: OfferDB,
     picks: list[dict[str, str]] | None,
 ) -> str:
-    """Save the model's verdicts and added offers. Offers above the user's
-    level (by title or the years they ask for) are refused, so the table never
-    adds them."""
+    """Save the model's choice. Offers above the user's level (by the site's
+    tag, the title or the years they ask for) are refused, so the table never
+    shows them."""
     items = arguments.get("oferty")
     if not isinstance(items, list) or len(items) > MAX_PICKS:
         return _error(f"oferty musi być listą do {MAX_PICKS} pozycji.")
@@ -380,24 +395,15 @@ def _pick(
         if not isinstance(item, dict):
             return _error("Każda pozycja to obiekt z offer_id i powod.")
         offer_id, reason = item.get("offer_id"), item.get("powod")
-        verdict = item.get("ocena", "polecam")
         if not isinstance(offer_id, str) or not isinstance(reason, str):
             return _error("offer_id i powod muszą być tekstem.")
-        if verdict not in VERDICTS:
-            return _error("ocena to polecam albo uwaga.")
         problems = db.level_problems(profile, offer_id) if profile else []
         if db.get(offer_id) is None:
             unknown.append(offer_id)
         elif problems:
             refused.append({"offer_id": offer_id, "reasons": problems})
         elif all(pick["offer_id"] != offer_id for pick in chosen):
-            chosen.append(
-                {
-                    "offer_id": offer_id,
-                    "reason": reason[:MAX_REASON_CHARS],
-                    "verdict": verdict,
-                }
-            )
+            chosen.append({"offer_id": offer_id, "reason": reason[:MAX_REASON_CHARS]})
             _remember(offers, db, offer_id)
     if picks is not None:
         picks[:] = chosen
@@ -462,7 +468,7 @@ def run_tool(
     if call["name"] == "szukaj_ofert":
         limit = arguments.get("limit", 10)
         if isinstance(limit, bool) or not isinstance(limit, int):
-            return _error("limit musi być liczbą całkowitą od 1 do 30.")
+            return _error("limit musi być liczbą całkowitą od 1 do 100.")
         try:
             if search is not None:
                 matches = search(profile, limit)
