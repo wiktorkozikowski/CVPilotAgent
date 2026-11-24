@@ -212,11 +212,17 @@ def run_update(
 
         summary: dict = {"sites": {}}
         if consent:
-            deadline = clock() + max_minutes * 60
+            end = clock() + max_minutes * 60
             budget = max_new
-            for site in sites:
+            for number, site in enumerate(sites):
+                # Each site gets an equal share of what is left of the pages and
+                # the time, so a big site cannot starve the next one; a site that
+                # needs less leaves the rest to the sites after it.
+                sites_left = len(sites) - number
+                share = budget // sites_left
+                deadline = clock() + (end - clock()) / sites_left
                 stats = sync_site(
-                    site, store, budget, deadline, store_dir, get, sleep, clock
+                    site, store, share, deadline, store_dir, get, sleep, clock
                 )
                 budget -= stats["added"] + stats["skipped"]
                 summary["sites"][site] = stats

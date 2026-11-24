@@ -169,6 +169,38 @@ def test_budget_leaves_the_rest_for_the_next_run(tmp_path) -> None:
     assert second["stored"] == 5
 
 
+def test_a_big_site_does_not_use_up_the_budget_of_the_next(tmp_path) -> None:
+    board = FakeBoard({f"o{i}": f"Oferta {i}" for i in range(10)})
+    clock = FakeClock()
+    rocket = "https://rocketjobs.pl"
+
+    def get(url: str) -> str:
+        # The second site lists offers of its own, at its own address.
+        if url.startswith(rocket):
+            return board.get(url.replace(rocket, BASE)).replace(BASE, rocket)
+        return board.get(url)
+
+    summary = run_update(
+        store_dir=tmp_path / "store",
+        index_dir=tmp_path / "index",
+        embedder=HashingEmbedder(),
+        sites=["justjoin", "rocketjobs"],
+        consent=True,
+        seeds=[],
+        max_new=6,
+        max_minutes=50,
+        today=TODAY,
+        get=get,
+        sleep=clock.sleep,
+        clock=clock,
+    )
+
+    # Each site has 10 new offers and may fetch half of the 6 pages.
+    assert summary["sites"]["justjoin"]["added"] == 3
+    assert summary["sites"]["rocketjobs"]["added"] == 3
+    assert summary["stored"] == 6
+
+
 def test_rate_limit_answer_stops_downloading(tmp_path) -> None:
     board = FakeBoard(
         {"a": "A", "b": "B", "c": "C"}, fail={"a": 429, "b": 429, "c": 429}
