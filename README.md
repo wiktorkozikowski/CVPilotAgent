@@ -28,8 +28,9 @@ i powodem przy każdej. Projekt na kurs **Designing LLM/VLM Agents**.
   profil nie trafia do repozytorium.
 - **Tools:** do odczytu bazy ofert `szukaj_ofert` (ranking dla profilu),
   `przeszukaj_oferty` (własne zapytanie i filtry), `pokaz_oferte`,
-  `porownaj_z_profilem` i `wybierz_oferty` (oferty wybrane przez agenta
-  spośród 100 kandydatów z rankingu, z powodami); `dodaj_do_listy` (odwracalny zapis)
+  `porownaj_z_profilem` i `wybierz_oferty` (wybór agenta z powodami);
+  `ocen_oferty` (ocena 0–10 każdego z 40 kandydatów z rankingu, po 8
+  w wywołaniu; to ona decyduje, co pokazuje wyszukiwanie); `dodaj_do_listy` (odwracalny zapis)
   i `usun_z_listy` (wymaga potwierdzenia użytkownika w aplikacji).
   `szukaj_ofert` i `dodaj_do_listy` są też w serwerze MCP, usuwanie nie.
   Każde narzędzie waliduje argumenty w kodzie.
@@ -68,21 +69,27 @@ przeglądarka ──HTTPS / tunel SSH──► agent_project.web (127.0.0.1:8000
 offer-update.timer (co godzinę) ──► offer_server.update ──► var/store, var/index
 ```
 
-**Wyszukiwanie** ma dwa etapy:
+**Wyszukiwanie** (przycisk „Szukaj ofert”) ma dwa etapy:
 
 1. **Kandydaci z kodu.** Ranking liczy dopasowanie całej bazy do profilu
    (podobieństwo treści, stanowisko, umiejętności, lokalizacja) i wybiera
-   100 najlepszych ofert. Oferty innego poziomu niż profil odpadają już tutaj.
-2. **Wybór agenta.** Agent przegląda tych 100 kandydatów, sprawdza wątpliwe
-   oferty (`porownaj_z_profilem`, `pokaz_oferte`) i w `wybierz_oferty` wybiera
-   tylko naprawdę dobrze dopasowane, najwyżej tyle, ile chcesz, każdą
-   z powodem.
+   40 najlepszych ofert. Oferty innego poziomu niż profil odpadają już tutaj.
+2. **Ocena modelu** (`agent_project/judge.py`). Model ocenia każdego
+   kandydata osobno w skali 0–10, po 8 ofert w jednym wywołaniu, na pełnych
+   wymaganiach oferty (do 1200 znaków), poziomie z ogłoszenia i wymaganych
+   latach doświadczenia. Skala jest stała: 7–8 to „stanowisko pasuje, ma
+   większość kluczowych wymagań”, 9–10 „prawie wszystkie”, poniżej 7 oferta
+   nie jest pokazywana. Oferty, których model nie ocenił, dostają drugą
+   szansę w kolejnym wywołaniu.
 
-Tabela pokazuje tylko wybór agenta. Wysoki wynik rankingu nie wystarcza:
-oferta musi pasować stanowiskiem, kluczowymi wymaganiami, poziomem
-i lokalizacją. Jeśli dobrych ofert jest mniej, agent pokazuje mniej, a jeśli
-nie ma żadnej, pisze, że nie znalazł dopasowań i dlaczego. Szczegóły bazy,
-wektoryzacji i aktualizacji ofert: [docs/baza-ofert.md](docs/baza-ofert.md).
+Tabela pokazuje tylko oferty z oceną co najmniej 7/10, od najlepszej,
+najwyżej tyle, ile chcesz, z powodem przy każdej. Jeśli dobrych jest mniej,
+pokazuje mniej; jeśli nie ma żadnej, pisze, ile miała najlepsza i dlaczego.
+Mały model wybierający z długiej listy ocenia głównie po tytułach; ocena
+każdej oferty osobno, w małych porcjach, jest dużo trafniejsza. Rozmowa
+o profilu dalej korzysta z narzędzi agenta (`przeszukaj_oferty`,
+`pokaz_oferte`, `porownaj_z_profilem`). Szczegóły bazy, wektoryzacji
+i aktualizacji ofert: [docs/baza-ofert.md](docs/baza-ofert.md).
 
 **Interfejs:**
 
@@ -90,17 +97,17 @@ wektoryzacji i aktualizacji ofert: [docs/baza-ofert.md](docs/baza-ofert.md).
   o brakujące pola. Profil zapisuje się dopiero po kliknięciu „Zatwierdź
   profil”; sam model nie może go zapisać. W rozmowie model może też
   przeglądać bazę ofert (np. „jakie są oferty z Power BI w Krakowie?”).
-- **Szukaj ofert.** Tabela pokazuje oferty wybrane przez agenta z powodem
-  przy każdej („spoza rankingu” przy ofertach, które agent znalazł własnym
-  zapytaniem). Nad tabelą jest liczba wybranych spośród kandydatów albo
-  informacja, że dobrych dopasowań nie ma. Pod tabelą jest przebieg każdego
-  kroku i ścieżka do śladu w `traces/`.
+- **Szukaj ofert.** Tabela pokazuje oferty z oceną modelu (kolumna „Wynik”,
+  0–10) i powodem przy każdej. Nad tabelą jest liczba ocenionych kandydatów
+  albo informacja, że dobrych dopasowań nie ma. Pod tabelą jest przebieg
+  każdego wywołania modelu i ścieżka do śladu w `traces/`.
 - **Lista wybranych.** Każdy profil ma własną listę
   (`data/shortlists/<id>.json`). Usunięcie oferty wymaga potwierdzenia
   w oknie przeglądarki.
 
 **Ograniczenia każdego uruchomienia:** najwyżej 24 kroki modelu
-(`MAX_STEPS`) i 0,10 USD (`MAX_RUN_COST_USD`, oba w `agent.py`). Kilka
+(`MAX_STEPS`) i 0,10 USD (`MAX_RUN_COST_USD`, oba w `agent.py`; ocena
+kandydatów to 5–7 wywołań i ten sam limit kosztu). Kilka
 niezależnych narzędzi, o które model prosi w jednej odpowiedzi, wykonuje się
 w jednym kroku. Uwaga: 24 kroki to więcej niż limit kursu (12).
 

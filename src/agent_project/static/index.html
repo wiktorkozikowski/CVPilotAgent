@@ -279,7 +279,7 @@
           <th>Firma</th>
           <th title="Umiejętności z profilu, które występują w ofercie">Pasuje</th>
           <th title="Co w ofercie nie zgadza się z preferencjami: poziom, tryb pracy, forma zatrudnienia, wynagrodzenie">Uwagi</th>
-          <th title="Dopasowanie oferty do profilu, od 0 do 1">Wynik</th>
+          <th title="Ocena modelu od 0 do 10 (wyszukiwanie w bazie) albo wynik rankingu od 0 do 1">Wynik</th>
           <th></th>
         </tr></thead>
         <tbody id="chat-matches"></tbody>
@@ -1155,7 +1155,8 @@
           m.company,
           m.matched_skills.join(", "),
           (m.conflicts || []).join("; ") || "—",
-          String(m.score),
+          // The model's rating when it rated the offer, else the ranking score.
+          m.fit != null ? `${m.fit}/10` : String(m.score),
         ];
         cells.forEach((text, i) => {
           const td = document.createElement("td");
@@ -1216,9 +1217,10 @@
       const pool = picked && run.candidates ? ` spośród ${run.candidates} kandydatów` : "";
       let found;
       if (picked) {
-        found = matches.length
-          ? `Agent wybrał dobrze dopasowane oferty: ${matches.length}${pool}.`
-          : `Agent nie znalazł dobrze dopasowanych ofert${pool}. ${run.answer || ""}`.trim();
+        // The answer says how many were rated, or why none was good enough.
+        found = run.answer || (matches.length
+          ? `Dobrze dopasowane oferty: ${matches.length}${pool}.`
+          : `Brak dobrze dopasowanych ofert${pool}.`);
       } else {
         found = matches.length ? `Znaleziono ofert: ${matches.length}.` : "Nie znaleziono ofert.";
       }

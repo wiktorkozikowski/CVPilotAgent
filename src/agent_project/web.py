@@ -35,6 +35,7 @@ from agent_project.agent import (
     system_prompt,
 )
 from agent_project.auth import COOKIE_NAME, Account, Auth, LockedOut, account_path
+from agent_project.judge import best_fits, rate_offers, summary
 from agent_project.llm import ModelClient, OpenRouterClient
 from agent_project.matching import search_offers
 from agent_project.models import Offer, OfferMatch, Profile, load_offers
@@ -69,8 +70,8 @@ MAX_BODY_BYTES = 64 * 1024
 MAX_CHAT_CHARS = 2000
 SEARCH_LIMIT = 10  # offers shown when the user does not say how many
 MAX_SEARCH_LIMIT = 30
-# Candidates the ranking hands the agent; it picks the offers to show.
-CANDIDATE_POOL = 100
+# Candidates the ranking picks; the model rates each one (agent_project.judge).
+CANDIDATE_POOL = 40
 # The chat may browse the database too, but not pick (that is the search button).
 CHAT_DB_TOOLS = [t for t in DB_TOOLS if t["function"]["name"] != "wybierz_oferty"]
 SECURITY_HEADERS = {
@@ -191,47 +192,6 @@ def _known_offers(config: "_Config", offer_id: str | None = None) -> list[Offer]
                 remember_offers(config.seen_offers_path, [found])
                 offers.append(found)
     return offers
-
-
-def _offer_row(
-    config: "_Config", profile: Profile, offer_id: str, ranked: dict[str, OfferMatch]
-) -> dict[str, Any] | None:
-    """A table row for an offer from the ranking pool or, failing that, the
-    database (an offer the agent found by its own queries)."""
-    match = ranked.get(offer_id)
-    if match is not None:
-        return _match_to_dict(match)
-    offer = config.offer_db.offer(offer_id)
-    facts = config.offer_db.compare(profile, offer_id)
-    if offer is None or facts is None:
-        return None
-    return _match_to_dict(
-        OfferMatch(
-            offer=offer,
-            matched_skills=facts["profile_skills_in_offer"],
-            score=facts["similarity_to_profile"] or 0.0,
-            conflicts=facts["conflicts"],
-        )
-    )
-
-
-def _picked_rows(
-    config: "_Config",
-    profile: Profile,
-    picks: list[dict[str, str]],
-    matches: list[OfferMatch],
-    limit: int,
-) -> list[dict[str, Any]]:
-    """The table: the offers the agent chose, best first, at most `limit`, each
-    with its reason. Source "agent" marks one found outside the ranking."""
-    ranked = {m.offer.id: m for m in matches}
-    rows = []
-    for pick in picks[:limit]:
-        row = _offer_row(config, profile, pick["offer_id"], ranked)
-        if row is not None:
-            source = "ranking" if pick["offer_id"] in ranked else "agent"
-            rows.append({**row, "source": source, "reason": pick["reason"]})
-    return rows
 
 
 def _shortlist_path(config: "_Config", profile_id: Any) -> Path:
@@ -730,42 +690,29 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 self._send_json(404, {"error": "Nie ma takiego profilu."})
                 return
 
-            # One ranking: the agent's szukaj_ofert uses these candidates.
-            # With the database the ranking picks the closest CANDIDATE_POOL
-            # offers and the agent chooses the ones that really fit
-            # (wybierz_oferty); only those are shown, maybe fewer or none.
-            try:
-                if config.offer_db is None:
-                    matches = _find_matches(config, profile, limit)
-                else:
-                    matches = config.offer_db.match_profile(profile, CANDIDATE_POOL)
-            except ValueError as error:
-                self._send_json(400, {"error": str(error)})
-                return
-            if config.offer_db is None:
-                offers = load_offers(config.data_dir / "job_offers.json")
-            else:
-                offers = _known_offers(config)
-            picks: list[dict[str, str]] = []
-
-            def search(_profile, limit: int, found=matches):
-                return found[:limit]
-
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
             trace_path = (
                 config.data_dir.parent / "traces" / f"ui_{profile_id}_{stamp}.jsonl"
             )
-            if config.offer_db is None:
-                request = f"Pokaż {limit} ofert pasujących do profilu: {profile.name}."
-            else:
-                request = (
-                    f"Wybierz najwyżej {limit} ofert naprawdę dobrze "
-                    f"dopasowanych do profilu: {profile.name}. Jeśli dobrych "
-                    "jest mniej albo nie ma żadnej, napisz to."
-                )
+            if config.offer_db is not None:
+                self._rate_search(profile_id, profile, limit, trace_path)
+                return
+
+            # Without the database: the agent searches job_offers.json.
+            matches = _find_matches(config, profile, limit)
+            offers = load_offers(config.data_dir / "job_offers.json")
+
+            def search(_profile, limit: int, found=matches):
+                return found[:limit]
+
             messages = [
-                {"role": "system", "content": system_prompt(config.offer_db)},
-                {"role": "user", "content": request},
+                {"role": "system", "content": system_prompt(None)},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Pokaż {limit} ofert pasujących do profilu: {profile.name}."
+                    ),
+                },
             ]
             try:
                 with config.search_lock:
@@ -777,8 +724,6 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                         trace_path,
                         shortlist_path=_shortlist_path(config, profile_id),
                         search=search,
-                        db=config.offer_db,
-                        picks=picks,
                         max_cost_usd=MAX_RUN_COST_USD,
                     )
             except ValueError as error:
@@ -786,36 +731,79 @@ def _make_handler(config: _Config) -> type[BaseHTTPRequestHandler]:
                 self._send_json(500, {"error": str(error)})
                 return
             except RuntimeError as error:
-                self._send_json(
-                    502,
-                    {
-                        "error": str(error),
-                        "trace": _trace_name(trace_path, config),
-                        "steps": _trace_steps(trace_path),
-                    },
-                )
+                self._send_run_error(error, trace_path)
                 return
             except Exception:
                 self._send_json(500, {"error": "Agent nie zakończył pracy."})
                 return
-
-            if config.offer_db is not None:
-                rows = _picked_rows(config, profile, picks, matches, limit)
-                # The offers shown stay readable on the shortlist later.
-                shown = [config.offer_db.offer(row["id"]) for row in rows]
-                remember_offers(config.seen_offers_path, [o for o in shown if o])
-            else:
-                rows = [_match_to_dict(m) for m in matches[:limit]]
             self._send_json(
                 200,
                 {
                     "profile": {"id": profile_id, **profile.model_dump()},
                     "answer": answer,
-                    # True when the database was searched and the agent chose
-                    # (rows may be empty: no good matches).
-                    "picked": config.offer_db is not None,
+                    "picked": False,
+                    "matches": [_match_to_dict(m) for m in matches[:limit]],
+                    "trace": _trace_name(trace_path, config),
+                    "steps": _trace_steps(trace_path),
+                },
+            )
+
+        def _rate_search(
+            self, profile_id: str, profile: Profile, limit: int, trace_path: Path
+        ) -> None:
+            """The ranking picks CANDIDATE_POOL offers, the model rates each one
+            against the profile (agent_project.judge) and only offers rated
+            MIN_FIT or more are shown: maybe fewer than `limit`, or none."""
+            try:
+                matches = config.offer_db.match_profile(profile, CANDIDATE_POOL)
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            try:
+                with config.search_lock:
+                    rated = rate_offers(
+                        config.client_factory(),
+                        profile,
+                        matches,
+                        config.offer_db,
+                        trace_path,
+                        max_cost_usd=MAX_RUN_COST_USD,
+                    )
+            except ValueError as error:
+                self._send_json(500, {"error": str(error)})
+                return
+            except RuntimeError as error:
+                self._send_run_error(error, trace_path)
+                return
+            except Exception:
+                self._send_json(500, {"error": "Ocena ofert nie powiodła się."})
+                return
+            rows = [
+                {**_match_to_dict(match), **rating}
+                for match, rating in best_fits(matches, rated, limit)
+            ]
+            # The offers shown stay readable on the shortlist later.
+            shown = [config.offer_db.offer(row["id"]) for row in rows]
+            remember_offers(config.seen_offers_path, [o for o in shown if o])
+            self._send_json(
+                200,
+                {
+                    "profile": {"id": profile_id, **profile.model_dump()},
+                    "answer": summary(matches, rated, len(rows)),
+                    # True: the model chose (rows may be empty: no good matches).
+                    "picked": True,
                     "candidates": len(matches),
                     "matches": rows,
+                    "trace": _trace_name(trace_path, config),
+                    "steps": _trace_steps(trace_path),
+                },
+            )
+
+        def _send_run_error(self, error: RuntimeError, trace_path: Path) -> None:
+            self._send_json(
+                502,
+                {
+                    "error": str(error),
                     "trace": _trace_name(trace_path, config),
                     "steps": _trace_steps(trace_path),
                 },

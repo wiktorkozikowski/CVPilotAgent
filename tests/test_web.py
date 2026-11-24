@@ -72,6 +72,19 @@ def server(start_server):
     return start_server([_reply("Znalazłem dopasowania.")])
 
 
+def _rate(*ratings):
+    """A mock reply of the offer rater: (number, rating, reason) per offer."""
+    return _reply(
+        name="ocen_oferty",
+        arguments={
+            "oceny": [
+                {"oferta": number, "ocena": fit, "powod": reason}
+                for number, fit, reason in ratings
+            ]
+        },
+    )
+
+
 def _request(url, method="GET", body=None):
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
@@ -444,23 +457,22 @@ def test_chat_search_before_saving_asks_to_confirm(start_server) -> None:
 
 def test_search_takes_a_limit(start_server) -> None:
     fake = make_offer_db(DB_OFFERS[:1])
-    # The model answers without a choice; after the app's one reminder it
-    # still does not pick, so nothing is shown.
-    base, _ = start_server([_reply("Jedna oferta.")] * 2, offer_db=fake)
+    # The model answers without ratings, also when asked again: nothing shown.
+    base, _ = start_server([_reply("Nie wiem.")] * 2, offer_db=fake)
 
     status, data = _request(
         base + "/api/search", "POST", {"profile_id": "jan", "limit": 30}
     )
     assert status == 200
-    # The ranking hands the agent 100 candidates whatever the limit.
-    assert fake.limits == [100]
+    # The ranking picks 40 candidates whatever the limit.
+    assert fake.limits == [40]
     assert data["matches"] == []
+    assert data["answer"].startswith("Nie udało się ocenić")
 
     status, data = _request(
         base + "/api/search", "POST", {"profile_id": "jan", "limit": 31}
     )
     assert status == 400
-    assert data["error"]
 
 
 def test_reset_discards_conversation_and_draft(start_server) -> None:
@@ -584,16 +596,7 @@ def test_search_returns_run_steps(server) -> None:
 def test_search_in_offer_db_and_shortlist_its_offer(start_server) -> None:
     fake = make_offer_db(DB_OFFERS[:1])
     base, _ = start_server(
-        [
-            _reply(name="szukaj_ofert", arguments={"limit": 100}),
-            _reply(
-                name="wybierz_oferty",
-                arguments={
-                    "oferty": [{"offer_id": "justjoin:remote-analyst", "powod": "SQL."}]
-                },
-            ),
-            _reply("Znalazłem jedną ofertę."),
-        ],
+        [_rate(("o1", 8, "SQL i Excel pasują."))],
         offer_db=fake,
     )
 
@@ -602,10 +605,10 @@ def test_search_in_offer_db_and_shortlist_its_offer(start_server) -> None:
     assert status == 200
     assert [m["id"] for m in data["matches"]] == ["justjoin:remote-analyst"]
     assert data["matches"][0]["requirements"] == "SQL, Excel"
-    # The table and the agent's tool share one search of 100 candidates.
-    assert fake.limits == [100]
-    tool_step = [s for s in data["steps"] if s["kind"] == "wynik"][0]
-    assert "justjoin:remote-analyst" in tool_step["result"]
+    assert data["matches"][0]["fit"] == 8
+    assert data["matches"][0]["reason"] == "SQL i Excel pasują."
+    assert fake.limits == [40]
+    assert [s["kind"] for s in data["steps"]] == ["decyzja", "wynik"]
 
     status, data = _request(
         base + "/api/shortlist/add",
@@ -623,52 +626,43 @@ def test_search_in_offer_db_and_shortlist_its_offer(start_server) -> None:
     ]
 
 
-def test_search_shows_only_the_offers_the_agent_chose(start_server) -> None:
-    db = make_offer_db()
+def test_search_shows_only_offers_rated_high_enough(start_server) -> None:
+    # The ranking for jan: remote-analyst, java, bi-krakow, warehouse (o1-o4).
     base, _ = start_server(
         [
-            _reply(name="szukaj_ofert", arguments={"limit": 100}),
-            _reply(name="przeszukaj_oferty", arguments={"zapytanie": "Power BI"}),
-            _reply(
-                name="wybierz_oferty",
-                arguments={
-                    "oferty": [
-                        {"offer_id": "justjoin:bi-krakow", "powod": "Power BI."},
-                        {"offer_id": "justjoin:remote-analyst", "powod": "SQL."},
-                    ]
-                },
-            ),
-            _reply("Dwie dobre oferty."),
+            _rate(
+                ("o1", 7, "SQL pasuje."),
+                ("o2", 3, "Inny zawód."),
+                ("o3", 9, "Power BI i SQL."),
+                ("o4", 0, "Magazyn."),
+            )
         ],
-        offer_db=db,
+        offer_db=make_offer_db(),
     )
 
     status, data = _request(
-        base + "/api/search", "POST", {"profile_id": "jan", "limit": 1}
+        base + "/api/search", "POST", {"profile_id": "jan", "limit": 5}
     )
 
     assert status == 200
     assert data["picked"] is True
     assert data["candidates"] == 4
-    # Only the agent's choice, in its order and cut to the limit; the ranking's
-    # own top offer (remote-analyst) is not added on its own.
-    assert [(m["id"], m["source"], m["reason"]) for m in data["matches"]] == [
-        ("justjoin:bi-krakow", "ranking", "Power BI.")
+    # Best rating first; offers rated below 7 are not shown.
+    assert [(m["id"], m["fit"]) for m in data["matches"]] == [
+        ("justjoin:bi-krakow", 9),
+        ("justjoin:remote-analyst", 7),
     ]
-    status, data = _request(
-        base + "/api/shortlist/add",
-        "POST",
-        {"profile_id": "jan", "offer_id": "justjoin:bi-krakow"},
-    )
-    assert data["status"] == "added"
 
 
-def test_search_with_no_good_match_shows_nothing(start_server) -> None:
+def test_search_with_no_good_match_says_why(start_server) -> None:
     base, _ = start_server(
         [
-            _reply(name="szukaj_ofert", arguments={"limit": 100}),
-            _reply(name="wybierz_oferty", arguments={"oferty": []}),
-            _reply("Brak dobrych dopasowań: oferty wymagają 3+ lat."),
+            _rate(
+                ("o1", 6, "Brakuje Power BI."),
+                ("o2", 2, "Wymaga 5 lat."),
+                ("o3", 5, "Brakuje Excela."),
+                ("o4", 0, "Magazyn."),
+            )
         ],
         offer_db=make_offer_db(),
     )
@@ -676,6 +670,23 @@ def test_search_with_no_good_match_shows_nothing(start_server) -> None:
     status, data = _request(base + "/api/search", "POST", {"profile_id": "jan"})
 
     assert status == 200
-    assert data["picked"] is True
     assert data["matches"] == []
-    assert data["answer"].startswith("Brak dobrych dopasowań")
+    assert "Najlepsza miała 6/10: Brakuje Power BI." in data["answer"]
+
+
+def test_offers_left_out_of_the_answer_are_asked_about_again(start_server) -> None:
+    base, tmp_path = start_server(
+        [
+            _rate(("o1", 8, "SQL."), ("o2", 1, "Java.")),
+            # Asked again about bi-krakow and warehouse, now o1 and o2.
+            _rate(("o1", 9, "Power BI."), ("o2", 0, "Magazyn.")),
+        ],
+        offer_db=make_offer_db(),
+    )
+
+    status, data = _request(base + "/api/search", "POST", {"profile_id": "jan"})
+
+    assert [m["id"] for m in data["matches"]] == [
+        "justjoin:bi-krakow",
+        "justjoin:remote-analyst",
+    ]
